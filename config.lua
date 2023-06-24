@@ -10,6 +10,7 @@ return {
 		sender_max_log          = 100,
 		embed_rate_numerator    = 10,
 		embed_rate_denominator  = 60,
+		debug_discord_client    = false,
 	},
 	powder = {
 		fetch_user_timeout      = 5,

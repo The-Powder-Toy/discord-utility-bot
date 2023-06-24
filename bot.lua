@@ -1412,6 +1412,10 @@ end
 local queue = cqueues.new()
 
 queue:wrap(function()
+	local debug_print
+	if not config.bot.debug_discord_client then
+		debug_print = function() end
+	end
 	cli = discord.client({
 		on_dispatch          = on_dispatch,
 		token                = secret_config.app_token,
@@ -1425,6 +1429,7 @@ queue:wrap(function()
 		                       discord.intent.MESSAGE_CONTENT,
 		identify_browser     = config.bot.http_server,
 		identify_device      = config.bot.http_server,
+		debug_print          = debug_print,
 	})
 
 	queue:wrap(function()
