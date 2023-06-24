@@ -957,6 +957,14 @@ local function do_user_embed(log, tname, data, report_failure)
 		ok, errcode, errbody = cli:create_channel_message(data.channel_id, embed_response(data.id, {
 			content = "No such user.",
 		}))
+	elseif tuser.IsBanned then
+		log("user is banned")
+		if not report_failure then
+			return
+		end
+		ok, errcode, errbody = cli:create_channel_message(data.channel_id, embed_response(data.id, {
+			content = "User is banned.",
+		}))
 	else
 		log("user found")
 		local avatar = tuser.Avatar
