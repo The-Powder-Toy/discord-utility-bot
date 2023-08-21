@@ -1,5 +1,5 @@
 local function iso8601(unix)
-	return os.date("%FT%TZ", unix)
+	return os.date("!%FT%TZ", unix)
 end
 
 local function rethrow(func)
