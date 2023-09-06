@@ -618,6 +618,14 @@ function client_i:get_user_nick(guild, user)
 	return data.nick or false
 end
 
+function client_i:get_user_roles(guild, user)
+	local data, errcode, errbody, errheaders = self:patient_api_fetch_("GET /guilds/#/members/$", guild, user)
+	if not data then
+		return errcode, errbody, errheaders
+	end
+	return data.roles
+end
+
 function client_i:set_user_nick(guild, user, nick)
 	return self:patient_api_fetch_("PATCH /guilds/#/members/$", guild, user, {
 		nick = nick,

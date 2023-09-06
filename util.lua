@@ -24,9 +24,25 @@ local function make_array(tbl)
 	return tbl
 end
 
+local function split(str, delim)
+	local tbl = {}
+	local cursor = 1
+	while true do
+		local first, last = str:find(delim, cursor, true)
+		if not first then
+			break
+		end
+		table.insert(tbl, str:sub(cursor, first - 1))
+		cursor = last + 1
+	end
+	table.insert(tbl, str:sub(cursor))
+	return tbl
+end
+
 return {
 	iso8601    = iso8601,
 	rethrow    = rethrow,
 	subst      = subst,
 	make_array = make_array,
+	split      = split,
 }

@@ -26,6 +26,10 @@ local powder            = require("powder")
 local util              = require("util")
 local db                = require("db")
 local html_entities     = require("htmlEntities")
+local history           = require("history")
+local pcre2             = require("rex_pcre2")
+
+local json_nullv = {}
 
 assert(openssl_rand.ready())
 
@@ -145,6 +149,15 @@ local function set_nick(log, duser, nick)
 	return data, errcode, errbody
 end
 
+local function get_roles(log, duser)
+	local log = log:sub("getting roles of duser $", duser)
+	local data, errcode, errbody = cli:get_user_roles(secret_config.guild_id, duser)
+	if not data then
+		log("failed: status $: $", errcode, errbody)
+	end
+	return data
+end
+
 local function get_effective_dname(duser, dname)
 	local log = log:sub("getting effective dname of duser $", duser)
 	local nick, errcode, errbody = cli:get_user_nick(secret_config.guild_id, duser)
@@ -172,10 +185,12 @@ local can_use_command = {
 	rwhois             = secret_config.user_role_ids,
 	identmod           = secret_config.mod_role_ids,
 	[ GETRQUSER_NAME ] = secret_config.mod_role_ids,
+	msglog             = secret_config.mod_role_ids,
 }
 local command_custom_ids = {
-	verify = "verify",
-	setnick = "setnick",
+	verify               = "verify",
+	setnick              = "setnick",
+	msglog_search_prefix = "msglog_search",
 }
 local command_ids = {}
 local function register_commands()
@@ -224,6 +239,116 @@ local function register_commands()
 					description = "Powder Toy user to look for",
 					type = discord.command_option.STRING,
 					required = true,
+				},
+			},
+		},
+		{
+			name = "msglog",
+			description = "Moderator command for inspecting the message log",
+			options = {
+				{
+					name = "search",
+					description = "Search for messages in the log",
+					type = discord.command_option.SUB_COMMAND,
+					options = {
+						{
+							name = "item",
+							description = "Item index, starts at and defaults to 1 (most recent) and counts up",
+							type = discord.command_option.INTEGER,
+						},
+						{
+							name = "revision",
+							description = "Revision index, starts at 1 (least recent) and counts up, defaults to the most recent one",
+							type = discord.command_option.INTEGER,
+						},
+						{
+							name = "page",
+							description = subst("Page ($-byte chunk) index, starts at and defaults to 1 and counts up", config.bot.message_log_page_size),
+							type = discord.command_option.INTEGER,
+						},
+						{
+							name = "created",
+							description = "Created status, defaults to none",
+							type = discord.command_option.BOOLEAN,
+						},
+						{
+							name = "edited",
+							description = "Edited status, defaults to none",
+							type = discord.command_option.BOOLEAN,
+						},
+						{
+							name = "deleted",
+							description = "Deleted status, defaults to none",
+							type = discord.command_option.BOOLEAN,
+						},
+						{
+							name = "channel",
+							description = "Sent to this channel, defaults to none",
+							type = discord.command_option.CHANNEL,
+						},
+						{
+							name = "sender",
+							description = "Sent by this user, defaults to none",
+							type = discord.command_option.USER,
+						},
+						{
+							name = "mentionee",
+							description = "Mentioned this user (either directly or via a role) or role, defaults to none",
+							type = discord.command_option.MENTIONABLE,
+						},
+						{
+							name = "regex",
+							description = "PCRE2 regex to filter content blob with, defaults to none",
+							type = discord.command_option.STRING,
+						},
+						{
+							name = "caseless",
+							description = "PCRE2_CASELESS flag, defaults to true",
+							type = discord.command_option.BOOLEAN,
+						},
+						{
+							name = "multiline",
+							description = "PCRE2_MULTILINE flag, defaults to true",
+							type = discord.command_option.BOOLEAN,
+						},
+						{
+							name = "dotall",
+							description = "PCRE2_DOTALL flag, defaults to true",
+							type = discord.command_option.BOOLEAN,
+						},
+						{
+							name = "extended",
+							description = "PCRE2_EXTENDED flag, defaults to false",
+							type = discord.command_option.BOOLEAN,
+						},
+						{
+							name = "ungreedy",
+							description = "PCRE2_UNGREEDY flag, defaults to false",
+							type = discord.command_option.BOOLEAN,
+						},
+						{
+							name = "msgid",
+							description = "Message ID, defaults to none",
+							type = discord.command_option.STRING,
+						},
+					},
+				},
+				{
+					name = "whopinged",
+					description = "Helps you figure out who pinged you last and then edited or deleted their message",
+					type = discord.command_option.SUB_COMMAND,
+					options = {
+						{
+							name = "channel",
+							description = "Sent to this channel, defaults to none",
+							type = discord.command_option.CHANNEL,
+						},
+						{
+							name = "mentionee",
+							description = "Mentioned this user (either directly or via a role) or role, defaults to you",
+							type = discord.command_option.MENTIONABLE,
+						},
+					},
 				},
 			},
 		},
@@ -333,6 +458,10 @@ end
 
 local function discord_response_data(info)
 	local data = {}
+	data.allowed_mentions = {
+		replied_user = false,
+		parse = util.make_array({}),
+	}
 	data.content = info.content
 	data.components = info.components
 	data.flags = discord.interaction_response_flag.EPHEMERAL
@@ -537,36 +666,7 @@ local function appcommand_setnick(log, data)
 	end
 end
 
-local make_event_log
-do
-	local event_log_i = {}
-	local event_log_m = { __index = event_log_i }
-
-	function event_log_i:push(key, data)
-		self.counter_ = self.counter_ + 1
-		if self.log_[self.counter_ - self.max_entries_] then
-			self.data_[self.log_[self.counter_ - self.max_entries_]] = nil
-			self.log_[self.counter_ - self.max_entries_] = nil
-		end
-		self.data_[key] = data
-		self.log_[self.counter_] = key
-	end
-
-	function event_log_i:get(key)
-		return self.data_[key]
-	end
-
-	function make_event_log(max_entries)
-		return setmetatable({
-			max_entries_ = max_entries,
-			counter_ = 0,
-			data_ = {},
-			log_ = {},
-		}, event_log_m)
-	end
-end
-
-local rquser_events = make_event_log(config.bot.rquser_max_log)
+local rquser_events = history.history(config.bot.rquser_max_log)
 local function appcommand_getrquser(log, data)
 	local dmsg = data.data.target_id
 	local log = log:sub("appcommand_getrquser by duser $ for dmsg $", data.member.user.id, dmsg)
@@ -700,6 +800,323 @@ local function appcommand_rwhois(log, data)
 	end
 end
 
+local message_log = history.history(config.bot.message_log_max_blob_bytes)
+local search_session_log = history.history(config.bot.message_log_max_sessions)
+local next_search_session_id = 1
+
+local MSGLOG_SEARCH_REVISION_AVAILABLE_LAST  = -1
+local MSGLOG_SEARCH_REVISION_AVAILABLE_FIRST = -2
+local function search_respond(log, data, search_session_id, results, page_index, revision_index, item_index)
+	local ok, errcode, errbody
+	if #results == 0 then
+		ok, errcode, errbody = discord_interaction_respond(data, {
+			content = "No results.",
+		})
+	elseif item_index < 1 or item_index > #results then
+		ok, errcode, errbody = discord_interaction_respond(data, {
+			content = subst("Invalid item index $ into result set of $ items.", item_index, #results),
+		})
+	else
+		local item = results[#results + 1 - item_index]
+		local revision_available_last = item.value.revision
+		local revisions = {
+			[ revision_available_last ] = item.value,
+		}
+		local revision_available_first = revision_available_last
+		while true do
+			local index = revision_available_first - 1
+			local revision = message_log:get(item.key .. "/" .. index)
+			if not revision then
+				break
+			end
+			revisions[index] = revision
+			revision_available_first = index
+		end
+		if revision_index == MSGLOG_SEARCH_REVISION_AVAILABLE_LAST then
+			revision_index = revision_available_last
+		end
+		if revision_index == MSGLOG_SEARCH_REVISION_AVAILABLE_FIRST then
+			revision_index = revision_available_first
+		end
+		local selected_revision = revisions[revision_index]
+		local result_pages = selected_revision and math.ceil(#selected_revision.content_blob / config.bot.message_log_page_size)
+		if not selected_revision then
+			ok, errcode, errbody = discord_interaction_respond(data, {
+				content = subst("Invalid revision index $ into set of available revisions $ through $.", revision_index, revision_available_first, revision_available_last),
+			})
+		elseif page_index < 1 or page_index > result_pages then
+			ok, errcode, errbody = discord_interaction_respond(data, {
+				content = subst("Invalid page index $ into result set of $ pages.", page_index, result_pages),
+			})
+		else
+			local page_base = (page_index - 1) * config.bot.message_log_page_size
+			local blob_page = selected_revision.content_blob:sub(page_base + 1, page_base + config.bot.message_log_page_size)
+			local mention_strs = {}
+			for i = 1, #selected_revision.mentions do
+				table.insert(mention_strs, subst("<@$>", selected_revision.mentions[i]))
+			end
+			for i = 1, #selected_revision.mention_roles do
+				table.insert(mention_strs, subst("<@&$>", selected_revision.mention_roles[i]))
+			end
+			if #mention_strs == 0 then
+				table.insert(mention_strs, "nobody")
+			end
+			local mentions_str = table.concat(mention_strs, " ")
+			local content = {}
+			table.insert(content, subst("Item $ of $, ", item_index, #results))
+			if revision_available_first > 1 then
+				table.insert(content, subst("revision $ of $ through $ available, ", revision_index, revision_available_first, revision_available_last))
+			else
+				table.insert(content, subst("revision $ of $, ", revision_index, revision_available_last))
+			end
+			if result_pages > 1 then
+				table.insert(content, subst("page $ of $, ", page_index, result_pages))
+			end
+			table.insert(content, subst("$, by <@$> in <#$>, ", selected_revision.status, selected_revision.user.id, selected_revision.channel))
+			table.insert(content, subst("mentioning $", mentions_str))
+			table.insert(content, subst("\n```json\n$\n```", blob_page))
+			local action_row_components = {}
+			local function custom_id(page_index, revision_index, item_index)
+				return table.concat({
+					command_custom_ids.msglog_search_prefix,
+					search_session_id,
+					page_index,
+					revision_index,
+					item_index,
+				}, "/")
+			end
+			if page_index < result_pages then
+				table.insert(action_row_components, {
+					type = discord.component.BUTTON,
+					style = discord.component_button.SECONDARY,
+					custom_id = custom_id(page_index + 1, revision_index, item_index),
+					label = "Next page",
+				})
+			end
+			if revision_index > revision_available_first then
+				table.insert(action_row_components, {
+					type = discord.component.BUTTON,
+					style = discord.component_button.SECONDARY,
+					custom_id = custom_id(1, revision_index - 1, item_index),
+					label = "Previous revision",
+				})
+			end
+			if item_index < #results then
+				table.insert(action_row_components, {
+					type = discord.component.BUTTON,
+					style = discord.component_button.SECONDARY,
+					custom_id = custom_id(1, MSGLOG_SEARCH_REVISION_AVAILABLE_LAST, item_index + 1),
+					label = "Next item",
+				})
+			end
+			local components
+			if #action_row_components > 0 then
+				action_row_components[1].style = discord.component_button.PRIMARY
+				components = {
+					{
+						type = discord.component.ACTION_ROW,
+						components = action_row_components,
+					}
+				}
+			end
+			ok, errcode, errbody = discord_interaction_respond(data, {
+				content    = table.concat(content),
+				components = components,
+			})
+		end
+	end
+	if not ok then
+		log("failed to notify user: code $: $", errcode, errbody)
+	end
+end
+
+local function appcommand_msglog_search(log, data)
+	if data.data.custom_id then
+		local _, search_session_id, page_index, revision_index, item_index = table.unpack(util.split(data.data.custom_id, "/"))
+		search_session_id = tonumber(search_session_id)
+		page_index        = tonumber(page_index)
+		revision_index    = tonumber(revision_index)
+		item_index        = tonumber(item_index)
+		local log = log:sub("appcommand_msglog_search by duser $ picking up search session $", data.member.user.id, search_session_id)
+		local results = search_session_log:get(search_session_id)
+		if not results then
+			log("search session expired")
+			local ok, errcode, errbody = discord_interaction_respond(data, {
+				content = "Search session has expired, try the slash command.",
+			})
+			if not ok then
+				log("failed to notify user: code $: $", errcode, errbody)
+			end
+			return
+		end
+		search_respond(log, data, search_session_id, results, page_index, revision_index, item_index)
+		return
+	end
+	local terms = {}
+	local supported_terms = {
+		item      = true,
+		revision  = true,
+		page      = true,
+		created   = true,
+		edited    = true,
+		deleted   = true,
+		channel   = true,
+		sender    = true,
+		mentionee = true,
+		regex     = true,
+		caseless  = true,
+		multiline = true,
+		dotall    = true,
+		extended  = true,
+		ungreedy  = true,
+		msgid     = true,
+	}
+	local term_strs = {}
+	for _, option in pairs(data.data.options[1].options) do
+		if supported_terms[option.name] then
+			terms[option.name] = {
+				type  = option.type,
+				value = option.value,
+			}
+			table.insert(term_strs, subst("$ = $", option.name, option.value))
+		end
+	end
+	local terms_str = #term_strs > 0 and ("terms " .. table.concat(term_strs, ", ")) or "no terms" 
+	local log = log:sub("appcommand_msglog_search by duser $ with $", data.member.user.id, terms_str)
+	local regex
+	if terms.regex then
+		local flags = ""
+		if (terms.caseless  and terms.caseless .value) ~= false then flags = flags .. "i" end
+		if (terms.multiline and terms.multiline.value) ~= false then flags = flags .. "m" end
+		if (terms.dotall    and terms.dotall   .value) ~= false then flags = flags .. "s" end
+		if (terms.extended  and terms.extended .value) == true  then flags = flags .. "x" end
+		if (terms.ungreedy  and terms.ungreedy .value) == true  then flags = flags .. "U" end
+		local ok, err = pcall(function()
+			regex = pcre2.new(terms.regex.value, flags)
+		end)
+		if not ok then
+			log("bad regex")
+			local ok, errcode, errbody = discord_interaction_respond(data, {
+				content = subst("Invalid regex: $", err),
+			})
+			if not ok then
+				log("failed to notify user: code $: $", errcode, errbody)
+			end
+			return
+		end
+	end
+	local mentionables
+	if terms.mentionee then
+		mentionables = { [ terms.mentionee.value ] = true }
+		local roles
+		if terms.mentionee.value == data.member.user.id then
+			log("roles for mentionee discovered in the member field")
+			roles = data.member.roles
+		elseif data.data.resolved and data.data.resolved.members and data.data.resolved.members[terms.mentionee.value] then
+			log("roles for mentionee discovered in the resolved field")
+			roles = data.data.resolved.members[terms.mentionee.value].roles
+		elseif data.data.resolved and data.data.resolved.roles and data.data.resolved.roles[terms.mentionee.value] then
+			log("mentionee is a role")
+		else
+			assert(false)
+		end
+		if roles then
+			for i = 1, #roles do
+				mentionables[roles[i]] = true
+			end
+		end
+	end
+	local results = {}
+	for key, value in message_log:all() do
+		local include = true
+		if key:find("/") then
+			include = false
+		end
+		if terms.created then include = include and terms.created.value == (value.status == "created") end
+		if terms.edited  then include = include and terms.edited .value == (value.status == "edited")  end
+		if terms.deleted then include = include and terms.deleted.value == (value.status == "deleted") end
+		if terms.channel then include = include and terms.channel.value == value.channel               end
+		if terms.sender  then include = include and terms.sender .value == value.user.id               end
+		if terms.msgid   then include = include and terms.msgid  .value == key                         end
+		if regex         then include = include and regex:find(value.content_blob)                     end
+		if mentionables then
+			local found = false
+			local function check_array(array)
+				for i = 1, #array do
+					if mentionables[array[i]] then
+						found = true
+					end
+				end
+			end
+			check_array(value.mentions)
+			check_array(value.mention_roles)
+			include = include and found
+		end
+		if include then
+			table.insert(results, {
+				key = key,
+				value = value,
+			})
+		end
+	end
+	local search_session_id = next_search_session_id
+	next_search_session_id = next_search_session_id + 1
+	search_session_log:push(search_session_id, results)
+	local page_index     = terms.page     and terms.page    .value or 1
+	local revision_index = terms.revision and terms.revision.value or MSGLOG_SEARCH_REVISION_AVAILABLE_LAST
+	local item_index     = terms.item     and terms.item    .value or 1
+	search_respond(log, data, search_session_id, results, page_index, revision_index, item_index)
+end
+
+local function appcommand_msglog_whopinged(log, data)
+	local terms = {
+		mentionee = {
+			value = data.member.user.id,
+		},
+		created = {
+			value = false,
+		},
+		revision = {
+			value = MSGLOG_SEARCH_REVISION_AVAILABLE_FIRST,
+		},
+	}
+	local supported_terms = {
+		channel   = true,
+		mentionee = true,
+	}
+	local term_strs = {}
+	for _, option in pairs(data.data.options[1].options) do
+		if supported_terms[option.name] then
+			terms[option.name] = {
+				value = option.value,
+			}
+			table.insert(term_strs, subst("$ = $", option.name, option.value))
+		end
+	end
+	local terms_str = #term_strs > 0 and ("terms " .. table.concat(term_strs, ", ")) or "no terms" 
+	local log = log:sub("appcommand_msglog_whopinged by duser $ with $", data.member.user.id, terms_str)
+	local forwarded_options = {}
+	for name, item in pairs(terms) do
+		table.insert(forwarded_options, {
+			name  = name,
+			value = item.value,
+		})
+	end
+	appcommand_msglog_search(log:sub("entering from whopinged"), {
+		data = {
+			options = {
+				{
+					options = forwarded_options,
+				}
+			},
+			resolved = data.data.resolved,
+		},
+		member = data.member,
+		id     = data.id,
+		token  = data.token,
+	})
+end
+
 local function appcommand_identmod_connect(log, data)
 	local duser, tname
 	local giverole = true
@@ -757,12 +1174,19 @@ local function appcommand_identmod_connect(log, data)
 			end
 		end
 		if cok then
+			local role_ok
 			if giverole then
-				give_role(log, duser)
+				role_ok = give_role(log, duser)
 			end
-			ok, errcode, errbody = discord_interaction_respond(data, {
-				content = "Done.",
-			})
+			if giverole and not role_ok then
+				ok, errcode, errbody = discord_interaction_respond(data, {
+					content = "Done, but the role failed to be assigned.",
+				})
+			else
+				ok, errcode, errbody = discord_interaction_respond(data, {
+					content = "Done.",
+				})
+			end
 		end
 	else
 		log("tname $ not found", tname)
@@ -792,12 +1216,19 @@ local function appcommand_identmod_disconnect(log, data)
 	if record then
 		log("found duser $, disconnecting", duser)
 		db_disconnect(log, duser)
+		local role_ok
 		if takerole then
-			take_role(log, duser)
+			role_ok = take_role(log, duser)
 		end
-		ok, errcode, errbody = discord_interaction_respond(data, {
-			content = "Done.",
-		})
+		if takerole and not role_ok then
+			ok, errcode, errbody = discord_interaction_respond(data, {
+				content = "Done, but the role failed to be unassigned.",
+			})
+		else
+			ok, errcode, errbody = discord_interaction_respond(data, {
+				content = "Done.",
+			})
+		end
 	else
 		log("duser $ not found", duser)
 		ok, errcode, errbody = discord_interaction_respond(data, {
@@ -1017,7 +1448,6 @@ local ok_to_respond = {
 	[ discord.message.REPLY   ] = true,
 }
 
-local sender_events = make_event_log(config.bot.sender_max_log)
 local function on_dispatch(_, dtype, data)
 	cqueues.running():wrap(function()
 		-- logger.dump(dtype)
@@ -1027,6 +1457,7 @@ local function on_dispatch(_, dtype, data)
 			and ok_to_respond[data.type]
 			and data.guild_id == secret_config.guild_id
 			and not data.webhook_id
+			and not data.application_id
 			and array_intersect(data.member.roles, secret_config.user_role_ids)
 			and data.content then
 				repeat
@@ -1054,27 +1485,71 @@ local function on_dispatch(_, dtype, data)
 					end
 				until true
 			end
-			if  dtype == "MESSAGE_CREATE"
-			and ok_to_respond[data.type]
+			if  (dtype == "MESSAGE_CREATE" or
+			     dtype == "MESSAGE_UPDATE" or
+			     dtype == "MESSAGE_DELETE")
 			and data.guild_id == secret_config.guild_id
 			and not data.webhook_id
-			and data.content then
-				sender_events:push(data.id, {
-					user = {
-						id = data.author.id,
-						username = data.author.username,
-						discriminator = data.author.discriminator,
-						global_name = data.author.global_name,
-					},
-					channel = data.channel_id,
-				})
-			end
-			if  dtype == "MESSAGE_DELETE"
-			and data.guild_id == secret_config.guild_id then
-				local sender = sender_events:get(data.id)
-				local user = sender and discord.format_user(sender.user) or "?"
-				local channel = sender and sender.channel or "?"
-				log("message $ of $ got deleted in channel $", data.id, user, channel)
+			and not data.application_id then
+				local function get_ids(array)
+					local ids = {}
+					for i = 1, #array do
+						table.insert(ids, array[i].id)
+					end
+					return ids
+				end
+				local function elide_empty_array(array)
+					return array and #array > 0 and array or nil
+				end
+				local mention_everyone = data.mention_everyone
+				local mentions         = get_ids(data.mentions         or {})
+				local mention_roles    = get_ids(data.mention_roles    or {})
+				local mention_channels = get_ids(data.mention_channels or {})
+				local user = data.author and {
+					id            = data.author.id,
+					username      = data.author.username,
+					discriminator = data.author.discriminator,
+					global_name   = data.author.global_name,
+				}
+				local channel = data.channel_id
+				local revision = 1
+				local previous = message_log:get(data.id)
+				if previous then
+					message_log:rename(data.id, data.id .. "/" .. previous.revision)
+					mention_everyone = previous.mention_everyone
+					mentions         = previous.mentions
+					mention_roles    = previous.mention_roles
+					mention_channels = previous.mention_channels
+					user             = previous.user
+					channel          = previous.channel
+					revision         = previous.revision + 1
+				end
+				local message_status = {
+					[ "MESSAGE_CREATE" ] = "created",
+					[ "MESSAGE_UPDATE" ] = "updated",
+					[ "MESSAGE_DELETE" ] = "deleted",
+				}
+				local info = {
+					status           = message_status[dtype],
+					user             = user,
+					revision         = revision,
+					channel          = channel,
+					mention_everyone = mention_everyone,
+					mentions         = mentions,
+					mention_roles    = mention_roles,
+					mention_channels = mention_channels,
+					content_blob = lunajson.encode({
+						content          = data.content                        or nil,
+						embeds           = elide_empty_array(data.embeds     ) or nil,
+						attachments      = elide_empty_array(data.attachments) or nil,
+						components       = elide_empty_array(data.components ) or nil,
+						mention_everyone = mention_everyone or nil,
+						mentions         = elide_empty_array(mentions),
+						mention_roles    = elide_empty_array(mention_roles),
+						mention_channels = elide_empty_array(mention_channels),
+					}, json_nullv):gsub("`", "\\u0060"),
+				}
+				message_log:push(data.id, info, #info.content_blob)
 			end
 			if dtype == "GUILD_CREATE" and data.id == secret_config.guild_id then
 				local log = log:sub("listing members")
@@ -1124,6 +1599,9 @@ local function on_dispatch(_, dtype, data)
 				if data.data.custom_id == command_custom_ids.setnick then
 					appcommand_setnick(log, data)
 				end
+				if data.data.custom_id:match("^([^/]+)/") == command_custom_ids.msglog_search_prefix then
+					appcommand_msglog_search(log, data)
+				end
 			end
 			if dtype == "INTERACTION_CREATE" and data.type == discord.interaction.APPLICATION_COMMAND then
 				if data.data.id == command_ids.ping then
@@ -1152,6 +1630,14 @@ local function on_dispatch(_, dtype, data)
 				end
 				if data.data.id == command_ids.rwhois then
 					appcommand_rwhois(log, data)
+				end
+				if data.data.id == command_ids.msglog then
+					if data.data.options[1].name == "search" then
+						appcommand_msglog_search(log, data)
+					end
+					if data.data.options[1].name == "whopinged" then
+						appcommand_msglog_whopinged(log, data)
+					end
 				end
 				if data.data.id == command_ids.identmod then
 					if data.data.options[1].name == "connect" then

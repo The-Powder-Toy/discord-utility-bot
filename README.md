@@ -11,6 +11,7 @@ dependencies, namely:
  * `http`
  * `lsqlite3`
  * `html-entities`
+ * `lrexlib-pcre2`
 
 If you have [LuaRocks](https://luarocks.org/), you can install these with:
 
@@ -19,6 +20,7 @@ sudo luarocks install --lua-version=5.3 --tree=system lunajson
 sudo luarocks install --lua-version=5.3 --tree=system http
 sudo luarocks install --lua-version=5.3 --tree=system lsqlite3
 sudo luarocks install --lua-version=5.3 --tree=system html-entities
+sudo luarocks install --lua-version=5.3 --tree=system lrexlib-pcre2
 ```
 
 Bot OAuth2 URL:
