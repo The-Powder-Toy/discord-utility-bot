@@ -802,7 +802,6 @@ end
 
 local message_log = history.history(config.bot.message_log_max_blob_bytes)
 local search_session_log = history.history(config.bot.message_log_max_sessions)
-local next_search_session_id = 1
 
 local MSGLOG_SEARCH_REVISION_AVAILABLE_LAST  = -1
 local MSGLOG_SEARCH_REVISION_AVAILABLE_FIRST = -2
@@ -872,7 +871,9 @@ local function search_respond(log, data, search_session_id, results, page_index,
 			if result_pages > 1 then
 				table.insert(content, subst("page $ of $, ", page_index, result_pages))
 			end
-			table.insert(content, subst("$, by <@$> in <#$>, ", selected_revision.status, selected_revision.user.id, selected_revision.channel))
+			table.insert(content, subst("$ <t:$:R>, ", selected_revision.status, selected_revision.timestamp))
+			table.insert(content, subst("from <@$>, ", selected_revision.user.id))
+			table.insert(content, subst("in <#$>, ", selected_revision.channel))
 			table.insert(content, subst("mentioning $", mentions_str))
 			table.insert(content, subst("\n```json\n$\n```", blob_page))
 			local action_row_components = {}
@@ -933,7 +934,6 @@ end
 local function appcommand_msglog_search(log, data)
 	if data.data.custom_id then
 		local _, search_session_id, page_index, revision_index, item_index = table.unpack(util.split(data.data.custom_id, "/"))
-		search_session_id = tonumber(search_session_id)
 		page_index        = tonumber(page_index)
 		revision_index    = tonumber(revision_index)
 		item_index        = tonumber(item_index)
@@ -1059,8 +1059,7 @@ local function appcommand_msglog_search(log, data)
 			})
 		end
 	end
-	local search_session_id = next_search_session_id
-	next_search_session_id = next_search_session_id + 1
+	local search_session_id = basexx.to_url64(openssl_rand.bytes(12))
 	search_session_log:push(search_session_id, results)
 	local page_index     = terms.page     and terms.page    .value or 1
 	local revision_index = terms.revision and terms.revision.value or MSGLOG_SEARCH_REVISION_AVAILABLE_LAST
@@ -1344,7 +1343,7 @@ local function do_save_embed(log, id, data, report_failure)
 					title = save.Name,
 					description = save.Description,
 					color = secret_config.theme_color,
-					timestamp = save.Date ~= 0 and util.iso8601(save.Date) or nil,
+					timestamp = save.Date ~= 0 and util.to_iso8601(save.Date) or nil,
 					image = {
 						url = subst("http://static.powdertoy.co.uk/$.png", id),
 					},
@@ -1524,13 +1523,30 @@ local function on_dispatch(_, dtype, data)
 					channel          = previous.channel
 					revision         = previous.revision + 1
 				end
-				local message_status = {
-					[ "MESSAGE_CREATE" ] = "created",
-					[ "MESSAGE_UPDATE" ] = "updated",
-					[ "MESSAGE_DELETE" ] = "deleted",
-				}
+				local status, timestamp
+				if dtype == "MESSAGE_CREATE" then
+					status = "created"
+					timestamp = util.from_iso8601(discord.normalize_iso8601(data.timestamp))
+					if not timestamp then
+						timestamp = os.time()
+						log("invalid timestamp: $; defaulting to local time $", data.timestamp, timestamp)
+					end
+				end
+				if dtype == "MESSAGE_UPDATE" then
+					status = "updated"
+					timestamp = util.from_iso8601(discord.normalize_iso8601(data.edited_timestamp))
+					if not timestamp then
+						timestamp = os.time()
+						log("invalid timestamp: $; defaulting to local time $", data.edited_timestamp, timestamp)
+					end
+				end
+				if dtype == "MESSAGE_DELETE" then
+					status = "deleted"
+					timestamp = os.time()
+				end
 				local info = {
-					status           = message_status[dtype],
+					status           = status,
+					timestamp        = timestamp,
 					user             = user,
 					revision         = revision,
 					channel          = channel,

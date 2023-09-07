@@ -1,5 +1,24 @@
-local function iso8601(unix)
+local function to_iso8601(unix)
 	return os.date("!%FT%TZ", unix)
+end
+
+local function from_iso8601(str)
+	local function from_str(str)
+		local year, month, day, hour, min, sec = str:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)Z")
+		return year and os.time({
+			year  = tonumber(year),
+			month = tonumber(month),
+			day   = tonumber(day),
+			hour  = tonumber(hour),
+			min   = tonumber(min),
+			sec   = tonumber(sec),
+			isdst = false,
+		})
+	end
+	local time = str and from_str(str)
+	if time then
+		return time - (from_str(os.date("!%FT%TZ", 0)) - from_str(os.date("%FT%TZ", 0)))
+	end
 end
 
 local function rethrow(func)
@@ -40,9 +59,10 @@ local function split(str, delim)
 end
 
 return {
-	iso8601    = iso8601,
-	rethrow    = rethrow,
-	subst      = subst,
-	make_array = make_array,
-	split      = split,
+	to_iso8601   = to_iso8601,
+	from_iso8601 = from_iso8601,
+	rethrow      = rethrow,
+	subst        = subst,
+	make_array   = make_array,
+	split        = split,
 }

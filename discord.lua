@@ -712,6 +712,16 @@ local function format_user(user)
 	return subst("$ aka $#$", user.id, user.username, user.discriminator)
 end
 
+local function normalize_iso8601(str)
+	local year, month, day, hour, min, sec = str:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)Z")
+	if not year then
+		year, month, day, hour, min, sec = str:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)%.%d+%+00:00")
+	end
+	if year then
+		return ("%04d-%02d-%02dT%02d:%02d:%02dZ"):format(year, month, day, hour, min, sec)
+	end
+end
+
 return {
 	client                    = client,
 	intent                    = intent,
@@ -726,4 +736,5 @@ return {
 	message                   = message,
 	subst                     = subst,
 	format_user               = format_user,
+	normalize_iso8601         = normalize_iso8601,
 }
