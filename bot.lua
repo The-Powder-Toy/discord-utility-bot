@@ -1458,6 +1458,7 @@ local function on_dispatch(_, dtype, data)
 			and not data.webhook_id
 			and not data.application_id
 			and array_intersect(data.member.roles, secret_config.user_role_ids)
+			and not array_intersect(data.member.roles, secret_config.embed_muted_role_ids)
 			and data.content then
 				repeat
 					local content_lower = data.content:lower()
