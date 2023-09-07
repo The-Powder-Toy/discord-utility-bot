@@ -1526,7 +1526,7 @@ local function on_dispatch(_, dtype, data)
 				local status, timestamp
 				if dtype == "MESSAGE_CREATE" then
 					status = "created"
-					timestamp = util.from_iso8601(discord.normalize_iso8601(data.timestamp))
+					timestamp = data.timestamp and util.from_iso8601(discord.normalize_iso8601(data.timestamp))
 					if not timestamp then
 						timestamp = os.time()
 						log("invalid timestamp: $; defaulting to local time $", data.timestamp, timestamp)
@@ -1534,7 +1534,7 @@ local function on_dispatch(_, dtype, data)
 				end
 				if dtype == "MESSAGE_UPDATE" then
 					status = "updated"
-					timestamp = util.from_iso8601(discord.normalize_iso8601(data.edited_timestamp))
+					timestamp = data.edited_timestamp and util.from_iso8601(discord.normalize_iso8601(data.edited_timestamp))
 					if not timestamp then
 						timestamp = os.time()
 						log("invalid timestamp: $; defaulting to local time $", data.edited_timestamp, timestamp)
