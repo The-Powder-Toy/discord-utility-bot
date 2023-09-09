@@ -1485,12 +1485,12 @@ local function on_dispatch(_, dtype, data)
 					end
 				until true
 			end
-			if  (dtype == "MESSAGE_CREATE" or
-			     dtype == "MESSAGE_UPDATE" or
-			     dtype == "MESSAGE_DELETE")
-			and data.guild_id == secret_config.guild_id
-			and not data.webhook_id
-			and not data.application_id then
+			if (dtype == "MESSAGE_CREATE" or
+			    dtype == "MESSAGE_UPDATE" or
+			    dtype == "MESSAGE_DELETE") and
+			   data.guild_id == secret_config.guild_id and
+			   not data.webhook_id and
+			   not data.application_id then
 				local function get_ids(array)
 					local ids = {}
 					for i = 1, #array do
@@ -1566,7 +1566,9 @@ local function on_dispatch(_, dtype, data)
 						mention_channels = elide_empty_array(mention_channels),
 					}, json_nullv):gsub("`", "\\u0060"),
 				}
-				message_log:push(data.id, info, #info.content_blob)
+				if user and channel then
+					message_log:push(data.id, info, #info.content_blob)
+				end
 			end
 			if dtype == "GUILD_CREATE" and data.id == secret_config.guild_id then
 				local log = log:sub("listing members")
