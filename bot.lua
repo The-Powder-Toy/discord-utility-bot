@@ -458,10 +458,12 @@ end
 
 local function discord_response_data(info)
 	local data = {}
-	data.allowed_mentions = {
-		replied_user = false,
-		parse = util.make_array({}),
-	}
+	if not info.enable_mentions then
+		data.allowed_mentions = {
+			replied_user = false,
+			parse = util.make_array({}),
+		}
+	end
 	data.content = info.content
 	data.components = info.components
 	data.flags = discord.interaction_response_flag.EPHEMERAL
@@ -528,6 +530,7 @@ local function recheck_connection(log, record)
 									},
 								},
 							},
+							enable_mentions = true,
 						}))
 						if not ok then
 							log("failed to notify user: code $: $", errcode, errbody)
@@ -1600,6 +1603,7 @@ local function on_dispatch(_, dtype, data)
 									},
 								},
 							},
+							enable_mentions = true,
 						}))
 						if not ok then
 							log("failed to notify user: code $: $", errcode, errbody)
@@ -1760,7 +1764,7 @@ local function serve_check_endpoint()
 					if status == "no_role" then
 						format = "Account successfully connected, but the <@&$> role could not be assigned. Contact " .. moderators_str .. " for help."
 					end
-					local response_data = {
+					ok, errcode, errbody = discord_interaction_followup(info.followup, {
 						content = subst(format, secret_config.managed_role_id),
 						components = {
 							{
@@ -1775,30 +1779,26 @@ local function serve_check_endpoint()
 								},
 							},
 						},
-					}
-					local edname = get_effective_dname(info.user.id, info.user.global_name)
-					if edname and status ~= "no_role" and tname ~= edname then
-						response_data.content = response_data.content .. " Consider setting your Powder Toy name as your nickname."
-						table.insert(response_data.components, {
-							type = discord.component.ACTION_ROW,
-							components = {
-								{
-									type = discord.component.BUTTON,
-									style = discord.component_button.PRIMARY,
-									custom_id = command_custom_ids.setnick,
-									label = "Set your Powder Toy name as your nickname",
-								},
-							},
-						})
-					end
-					ok, errcode, errbody = discord_interaction_followup(info.followup, response_data)
+					})
 					if status == "ok" then
 						local log = log:sub("sending welcome message")
-						local ok, errcode, errbody = cli:create_channel_message(secret_config.welcome_id, discord_response_data({
-							content = subst("Welcome <@$> to the server! Their Powder Toy account is $.", info.user.id, tname),
-							url     = subst("$/User.html?Name=$", secret_config.backend_base, tname),
-							label   = subst("View $'s Powder Toy profile", tname),
-						}))
+						local response_data = discord_response_data({
+							content         = subst("Welcome <@$> to the server! Their Powder Toy account is $.", info.user.id, tname),
+							url             = subst("$/User.html?Name=$", secret_config.backend_base, tname),
+							label           = subst("View $'s Powder Toy profile", tname),
+							enable_mentions = true,
+						})
+						local edname = get_effective_dname(info.user.id, info.user.global_name)
+						if edname and tname ~= edname then
+							response_data.content = response_data.content .. " Consider using your Powder Toy name as your nickname on this server."
+							table.insert(response_data.components[1].components, {
+								type = discord.component.BUTTON,
+								style = discord.component_button.PRIMARY,
+								custom_id = command_custom_ids.setnick,
+								label = "Update your nickname",
+							})
+						end
+						local ok, errcode, errbody = cli:create_channel_message(secret_config.welcome_id, response_data)
 						if not ok then
 							log("failed to notify user: code $: $", errcode, errbody)
 						end
