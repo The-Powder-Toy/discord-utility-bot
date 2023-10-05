@@ -12,12 +12,11 @@ local function from_iso8601(str)
 			hour  = tonumber(hour),
 			min   = tonumber(min),
 			sec   = tonumber(sec),
-			isdst = false,
 		})
 	end
 	local time = str and from_str(str)
 	if time then
-		return time - (from_str(os.date("!%FT%TZ", 0)) - from_str(os.date("%FT%TZ", 0)))
+		return time - (from_str(os.date("!%FT%TZ", time)) - from_str(os.date("%FT%TZ", time)))
 	end
 end
 
