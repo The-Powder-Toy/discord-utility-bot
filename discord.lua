@@ -632,15 +632,6 @@ function client_i:set_user_nick(guild, user, nick)
 	})
 end
 
-function client_i:set_command_permissions(guild, command, data)
-	return self:patient_api_fetch_("PUT /applications/$/guilds/#/commands/$/permissions", self.app_id_, guild, command, data, {
-		authorization = "Bearer " .. self:get_bearer_token_({
-			"identify",
-			"applications.commands.permissions.update",
-		}),
-	})
-end
-
 function client_i:create_dm(user)
 	return self:patient_api_fetch_("POST /users/@me/channels", {
 		recipient_id = user,

@@ -31,6 +31,14 @@ local pcre2             = require("rex_pcre2")
 
 local json_nullv = {}
 
+local WHOISCTX_NAME = "Powder Toy Profile"
+local GETRQUSER_NAME = "Get Requesting User"
+local command_custom_ids = {
+	verify               = "verify",
+	setnick              = "setnick",
+	msglog_search_prefix = "msglog_search",
+}
+
 assert(openssl_rand.ready())
 
 local guild_members = {}
@@ -175,287 +183,6 @@ local function assert_api_fetch(data, errcode, errbody)
 	return data
 end
 
-local WHOISCTX_NAME = "Powder Toy Profile"
-local GETRQUSER_NAME = "Get Requesting User"
-local can_use_command = {
-	setnick            = secret_config.user_role_ids,
-	ping               = secret_config.user_role_ids,
-	whois              = secret_config.user_role_ids,
-	[ WHOISCTX_NAME ]  = secret_config.user_role_ids,
-	rwhois             = secret_config.user_role_ids,
-	identmod           = secret_config.mod_role_ids,
-	[ GETRQUSER_NAME ] = secret_config.mod_role_ids,
-	msglog             = secret_config.mod_role_ids,
-}
-local command_custom_ids = {
-	verify               = "verify",
-	setnick              = "setnick",
-	msglog_search_prefix = "msglog_search",
-}
-local command_ids = {}
-local function register_commands()
-	local data = assert_api_fetch(cli:set_application_commands(secret_config.guild_id, {
-		{
-			name = "verify",
-			description = "Verify yourself by connecting your Powder Toy account",
-			options = util.make_array({}),
-		},
-		{
-			name = "ping",
-			description = "Ping the Utility Bot",
-			options = util.make_array({}),
-		},
-		{
-			name = "setnick",
-			description = "Set your Powder Toy name as your nickname",
-			options = util.make_array({}),
-		},
-		{
-			name = "whois",
-			description = "Look up a Powder Toy user based on a Discord user",
-			options = {
-				{
-					name = "duser",
-					description = "Discord user to look for",
-					type = discord.command_option.USER,
-					required = true,
-				},
-			},
-		},
-		{
-			name = WHOISCTX_NAME,
-			type = discord.command.USER,
-		},
-		{
-			name = GETRQUSER_NAME,
-			type = discord.command.MESSAGE,
-		},
-		{
-			name = "rwhois",
-			description = "Look up a Discord user based on a Powder Toy user",
-			options = {
-				{
-					name = "tname",
-					description = "Powder Toy user to look for",
-					type = discord.command_option.STRING,
-					required = true,
-				},
-			},
-		},
-		{
-			name = "msglog",
-			description = "Moderator command for inspecting the message log",
-			options = {
-				{
-					name = "search",
-					description = "Search for messages in the log",
-					type = discord.command_option.SUB_COMMAND,
-					options = {
-						{
-							name = "item",
-							description = "Item index, starts at and defaults to 1 (most recent) and counts up",
-							type = discord.command_option.INTEGER,
-						},
-						{
-							name = "revision",
-							description = "Revision index, starts at 1 (least recent) and counts up, defaults to the most recent one",
-							type = discord.command_option.INTEGER,
-						},
-						{
-							name = "page",
-							description = subst("Page ($-byte chunk) index, starts at and defaults to 1 and counts up", config.bot.message_log_page_size),
-							type = discord.command_option.INTEGER,
-						},
-						{
-							name = "created",
-							description = "Created status, defaults to none",
-							type = discord.command_option.BOOLEAN,
-						},
-						{
-							name = "edited",
-							description = "Edited status, defaults to none",
-							type = discord.command_option.BOOLEAN,
-						},
-						{
-							name = "deleted",
-							description = "Deleted status, defaults to none",
-							type = discord.command_option.BOOLEAN,
-						},
-						{
-							name = "channel",
-							description = "Sent to this channel, defaults to none",
-							type = discord.command_option.CHANNEL,
-						},
-						{
-							name = "sender",
-							description = "Sent by this user, defaults to none",
-							type = discord.command_option.USER,
-						},
-						{
-							name = "mentionee",
-							description = "Mentioned this user (either directly or via a role) or role, defaults to none",
-							type = discord.command_option.MENTIONABLE,
-						},
-						{
-							name = "regex",
-							description = "PCRE2 regex to filter content blob with, defaults to none",
-							type = discord.command_option.STRING,
-						},
-						{
-							name = "caseless",
-							description = "PCRE2_CASELESS flag, defaults to true",
-							type = discord.command_option.BOOLEAN,
-						},
-						{
-							name = "multiline",
-							description = "PCRE2_MULTILINE flag, defaults to true",
-							type = discord.command_option.BOOLEAN,
-						},
-						{
-							name = "dotall",
-							description = "PCRE2_DOTALL flag, defaults to true",
-							type = discord.command_option.BOOLEAN,
-						},
-						{
-							name = "extended",
-							description = "PCRE2_EXTENDED flag, defaults to false",
-							type = discord.command_option.BOOLEAN,
-						},
-						{
-							name = "ungreedy",
-							description = "PCRE2_UNGREEDY flag, defaults to false",
-							type = discord.command_option.BOOLEAN,
-						},
-						{
-							name = "msgid",
-							description = "Message ID, defaults to none",
-							type = discord.command_option.STRING,
-						},
-					},
-				},
-				{
-					name = "whopinged",
-					description = "Helps you figure out who pinged you last and then edited or deleted their message",
-					type = discord.command_option.SUB_COMMAND,
-					options = {
-						{
-							name = "channel",
-							description = "Sent to this channel, defaults to none",
-							type = discord.command_option.CHANNEL,
-						},
-						{
-							name = "mentionee",
-							description = "Mentioned this user (either directly or via a role) or role, defaults to you",
-							type = discord.command_option.MENTIONABLE,
-						},
-					},
-				},
-			},
-		},
-		{
-			name = "identmod",
-			description = "Moderator command for managing Powder Toy account connections",
-			options = {
-				{
-					name = "connect",
-					description = "Connect a Discord user with a Powder Toy user",
-					type = discord.command_option.SUB_COMMAND,
-					options = {
-						{
-							name = "duser",
-							description = "Discord user to connect",
-							type = discord.command_option.USER,
-							required = true,
-						},
-						{
-							name = "tname",
-							description = "Powder Toy user to connect with",
-							type = discord.command_option.STRING,
-							required = true,
-						},
-						{
-							name = "giverole",
-							description = "Give the Discord user the bot-managed role (defaults to true)",
-							type = discord.command_option.BOOLEAN,
-						},
-					},
-				},
-				{
-					name = "disconnect",
-					description = "Disconnect a Discord user from the connected Powder Toy user",
-					type = discord.command_option.SUB_COMMAND,
-					options = {
-						{
-							name = "duser",
-							description = "Discord user to disconnect",
-							type = discord.command_option.USER,
-							required = true,
-						},
-						{
-							name = "takerole",
-							description = "Take from Discord user the bot-managed role (defaults to true)",
-							type = discord.command_option.BOOLEAN,
-						},
-					},
-				},
-				{
-					name = "rdisconnect",
-					description = "Disconnect a Powder Toy user from the connected Discord user",
-					type = discord.command_option.SUB_COMMAND,
-					options = {
-						{
-							name = "tname",
-							description = "Powder Toy user to disconnect",
-							type = discord.command_option.STRING,
-							required = true,
-						},
-						{
-							name = "takerole",
-							description = "Take from Discord user the bot-managed role (defaults to true)",
-							type = discord.command_option.BOOLEAN,
-						},
-					},
-				},
-				{
-					name = "dwhois",
-					description = "Look up a Powder Toy user based on a Discord user ID",
-					type = discord.command_option.SUB_COMMAND,
-					options = {
-						{
-							name = "duserid",
-							description = "Discord user ID to look for",
-							type = discord.command_option.STRING,
-							required = true,
-						},
-					},
-				},
-			},
-		},
-	}))
-	for _, command_data in pairs(data) do
-		command_ids[command_data.name] = command_data.id
-		if can_use_command[command_data.name] then
-			local permissions = {
-				{
-					id = secret_config.guild_id, -- disable for everyone
-					type = discord.command_permission.ROLE,
-					permission = false,
-				},
-			}
-			for _, role_id in pairs(can_use_command[command_data.name]) do
-				table.insert(permissions, {
-					id = role_id,
-					type = discord.command_permission.ROLE,
-					permission = true,
-				})
-			end
-			assert_api_fetch(cli:set_command_permissions(secret_config.guild_id, command_data.id, {
-				permissions = permissions,
-			}))
-		end
-	end
-end
-
 local function discord_response_data(info)
 	local data = {}
 	if not info.enable_mentions then
@@ -552,6 +279,62 @@ local function recheck_connection(log, record)
 	return record
 end
 
+local command_id_to_info = {}
+local add_command, register_commands
+do
+	local data_in = {}
+	local name_to_info = {}
+
+	function add_command(command_data)
+		local function scrub(tbl, key)
+			local value = tbl[key]
+			assert(value ~= nil, "missing to-be-scrubbed key " .. tostring(key))
+			tbl[key] = nil
+			return value
+		end
+		local can_use = scrub(command_data, "can_use_")
+		local handler
+		if command_data.options and command_data.options[1] and command_data.options[1].type == discord.command_option.SUB_COMMAND then
+			handler = {}
+			for _, subcommand_data in ipairs(command_data.options) do
+				handler[subcommand_data.name] = scrub(subcommand_data, "handler_")
+			end
+		else
+			handler = scrub(command_data, "handler_")
+		end
+		name_to_info[command_data.name] = {
+			name    = command_data.name,
+			handler = handler,
+			can_use = can_use,
+		}
+		table.insert(data_in, command_data)
+	end
+
+	function register_commands()
+		local data_out = assert_api_fetch(cli:set_application_commands(secret_config.guild_id, data_in))
+		for _, command_data in pairs(data_out) do
+			command_id_to_info[command_data.id] = name_to_info[command_data.name]
+		end
+	end
+end
+
+local function appcommand_ping(log, data)
+	local log = log:sub("appcommand_ping for duser $", data.member.user.id)
+	local ok, errcode, errbody = discord_interaction_respond(data, {
+		content = "Pong!" .. (math.random() < 0.001 and " 🍌" or ""),
+	})
+	if not ok then
+		log("failed to notify user: code $: $", errcode, errbody)
+	end
+end
+add_command({
+	name = "ping",
+	description = "Ping the Utility Bot",
+	options = util.make_array({}),
+	handler_ = appcommand_ping,
+	can_use_ = true,
+})
+
 local function appcommand_ident(log, data)
 	local log = log:sub("appcommand_ident for duser $", data.member.user.id)
 	local record = recheck_connection(log, db_whois(log, data.member.user.id)[1])
@@ -629,6 +412,13 @@ local function appcommand_ident(log, data)
 		return
 	end
 end
+add_command({
+	name = "verify",
+	description = "Verify yourself by connecting your Powder Toy account",
+	options = util.make_array({}),
+	handler_ = appcommand_ident,
+	can_use_ = true,
+})
 
 local function appcommand_setnick(log, data)
 	local log = log:sub("appcommand_setnick for duser $", data.member.user.id)
@@ -668,6 +458,13 @@ local function appcommand_setnick(log, data)
 		log("failed to notify user: code $: $", errcode, errbody)
 	end
 end
+add_command({
+	name = "setnick",
+	description = "Set your Powder Toy name as your nickname",
+	options = util.make_array({}),
+	handler_ = appcommand_setnick,
+	can_use_ = secret_config.user_role_ids,
+})
 
 local rquser_events = history.history(config.bot.rquser_max_log)
 local function appcommand_getrquser(log, data)
@@ -690,6 +487,12 @@ local function appcommand_getrquser(log, data)
 		log("failed to notify user: code $: $", errcode, errbody)
 	end
 end
+add_command({
+	name = GETRQUSER_NAME,
+	type = discord.command.MESSAGE,
+	handler_ = appcommand_getrquser,
+	can_use_ = secret_config.mod_role_ids,
+})
 
 local function appcommand_whois(log, data)
 	local duser
@@ -729,6 +532,21 @@ local function appcommand_whois(log, data)
 		log("failed to notify user: code $: $", errcode, errbody)
 	end
 end
+add_command({
+	name = "whois",
+	description = "Look up a Powder Toy user based on a Discord user",
+	options = {
+		{ name = "duser", description = "Discord user to look for", type = discord.command_option.USER, required = true },
+	},
+	handler_ = appcommand_whois,
+	can_use_ = secret_config.user_role_ids,
+})
+add_command({
+	name = WHOISCTX_NAME,
+	type = discord.command.USER,
+	handler_ = appcommand_whois,
+	can_use_ = secret_config.user_role_ids,
+})
 
 local function appcommand_identmod_dwhois(log, data)
 	local duserid
@@ -802,6 +620,15 @@ local function appcommand_rwhois(log, data)
 		log("failed to notify user: code $: $", errcode, errbody)
 	end
 end
+add_command({
+	name = "rwhois",
+	description = "Look up a Discord user based on a Powder Toy user",
+	options = {
+		{ name = "tname", description = "Powder Toy user to look for", type = discord.command_option.STRING, required = true },
+	},
+	handler_ = appcommand_rwhois,
+	can_use_ = secret_config.user_role_ids,
+})
 
 local message_log = history.history(config.bot.message_log_max_blob_bytes)
 local search_session_log = history.history(config.bot.message_log_max_sessions)
@@ -1119,6 +946,48 @@ local function appcommand_msglog_whopinged(log, data)
 	})
 end
 
+add_command({
+	name = "msglog",
+	description = "Moderator command for inspecting the message log",
+	options = {
+		{
+			name = "search",
+			description = "Search for messages in the log",
+			type = discord.command_option.SUB_COMMAND,
+			options = {
+				{ name = "item"     , description = "Item index, starts at and defaults to 1 (most recent) and counts up"                                          , type = discord.command_option.INTEGER     },
+				{ name = "revision" , description = "Revision index, starts at 1 (least recent) and counts up, defaults to the most recent one"                    , type = discord.command_option.INTEGER     },
+				{ name = "page"     , description = subst("Page ($-byte chunk) index, starts at and defaults to 1 and counts up", config.bot.message_log_page_size), type = discord.command_option.INTEGER     },
+				{ name = "created"  , description = "Created status, defaults to none"                                                                             , type = discord.command_option.BOOLEAN     },
+				{ name = "edited"   , description = "Edited status, defaults to none"                                                                              , type = discord.command_option.BOOLEAN     },
+				{ name = "deleted"  , description = "Deleted status, defaults to none"                                                                             , type = discord.command_option.BOOLEAN     },
+				{ name = "channel"  , description = "Sent to this channel, defaults to none"                                                                       , type = discord.command_option.CHANNEL     },
+				{ name = "sender"   , description = "Sent by this user, defaults to none"                                                                          , type = discord.command_option.USER        },
+				{ name = "mentionee", description = "Mentioned this user (either directly or via a role) or role, defaults to none"                                , type = discord.command_option.MENTIONABLE },
+				{ name = "regex"    , description = "PCRE2 regex to filter content blob with, defaults to none"                                                    , type = discord.command_option.STRING      },
+				{ name = "caseless" , description = "PCRE2_CASELESS flag, defaults to true"                                                                        , type = discord.command_option.BOOLEAN     },
+				{ name = "multiline", description = "PCRE2_MULTILINE flag, defaults to true"                                                                       , type = discord.command_option.BOOLEAN     },
+				{ name = "dotall"   , description = "PCRE2_DOTALL flag, defaults to true"                                                                          , type = discord.command_option.BOOLEAN     },
+				{ name = "extended" , description = "PCRE2_EXTENDED flag, defaults to false"                                                                       , type = discord.command_option.BOOLEAN     },
+				{ name = "ungreedy" , description = "PCRE2_UNGREEDY flag, defaults to false"                                                                       , type = discord.command_option.BOOLEAN     },
+				{ name = "msgid"    , description = "Message ID, defaults to none"                                                                                 , type = discord.command_option.STRING      },
+			},
+			handler_ = appcommand_msglog_search,
+		},
+		{
+			name = "whopinged",
+			description = "Helps you figure out who pinged you last and then edited or deleted their message",
+			type = discord.command_option.SUB_COMMAND,
+			options = {
+				{ name = "channel"  , description = "Sent to this channel, defaults to none"                                      , type = discord.command_option.CHANNEL     },
+				{ name = "mentionee", description = "Mentioned this user (either directly or via a role) or role, defaults to you", type = discord.command_option.MENTIONABLE },
+			},
+			handler_ = appcommand_msglog_whopinged,
+		},
+	},
+	can_use_ = secret_config.mod_role_ids,
+})
+
 local function appcommand_identmod_connect(log, data)
 	local duser, tname
 	local giverole = true
@@ -1289,6 +1158,54 @@ local function appcommand_identmod_rdisconnect(log, data)
 		log("failed to notify user: code $: $", errcode, errbody)
 	end
 end
+
+add_command({
+	name = "identmod",
+	description = "Moderator command for managing Powder Toy account connections",
+	options = {
+		{
+			name = "connect",
+			description = "Connect a Discord user with a Powder Toy user",
+			type = discord.command_option.SUB_COMMAND,
+			options = {
+				{ name = "duser"   , description = "Discord user to connect"                                      , type = discord.command_option.USER   , required = true },
+				{ name = "tname"   , description = "Powder Toy user to connect with"                              , type = discord.command_option.STRING , required = true },
+				{ name = "giverole", description = "Give the Discord user the bot-managed role (defaults to true)", type = discord.command_option.BOOLEAN                  },
+			},
+			handler_ = appcommand_identmod_connect,
+		},
+		{
+			name = "disconnect",
+			description = "Disconnect a Discord user from the connected Powder Toy user",
+			type = discord.command_option.SUB_COMMAND,
+			options = {
+				{ name = "duser"   , description = "Discord user to disconnect"                                    , type = discord.command_option.USER   , required = true },
+				{ name = "takerole", description = "Take from Discord user the bot-managed role (defaults to true)", type = discord.command_option.BOOLEAN                  },
+			},
+			handler_ = appcommand_identmod_disconnect,
+		},
+		{
+			name = "rdisconnect",
+			description = "Disconnect a Powder Toy user from the connected Discord user",
+			type = discord.command_option.SUB_COMMAND,
+			options = {
+				{ name = "tname"   , description = "Powder Toy user to disconnect"                                 , type = discord.command_option.STRING , required = true },
+				{ name = "takerole", description = "Take from Discord user the bot-managed role (defaults to true)", type = discord.command_option.BOOLEAN                  },
+			},
+			handler_ = appcommand_identmod_rdisconnect,
+		},
+		{
+			name = "dwhois",
+			description = "Look up a Powder Toy user based on a Discord user ID",
+			type = discord.command_option.SUB_COMMAND,
+			options = {
+				{ name = "duserid", description = "Discord user ID to look for", type = discord.command_option.STRING, required = true },
+			},
+			handler_ = appcommand_identmod_dwhois,
+		},
+	},
+	can_use_ = secret_config.mod_role_ids,
+})
 
 local function embed_response(message, tbl)
 	tbl.message_reference = {
@@ -1473,7 +1390,7 @@ local function on_dispatch(_, dtype, data)
 						end
 					end
 					do -- user:# embeds
-						local tname = content_lower:match("user:([A-Za-z0-9-_]+)")
+						local tname = content_lower:match("^user:([A-Za-z0-9-_]+)")
 						if tname then
 							do_user_embed(log, tname, data, true)
 							break
@@ -1627,54 +1544,31 @@ local function on_dispatch(_, dtype, data)
 				end
 			end
 			if dtype == "INTERACTION_CREATE" and data.type == discord.interaction.APPLICATION_COMMAND then
-				if data.data.id == command_ids.ping then
-					local log = log:sub("got a ping from $", discord.format_user(data.member.user))
-					local ok, errcode, errbody = discord_interaction_respond(data, {
-						content = "Pong!" .. (math.random() < 0.001 and " 🍌" or ""),
-					})
-					if not ok then
-						log("failed to notify user: code $: $", errcode, errbody)
+				local info = command_id_to_info[data.data.id]
+				local key = info and info.name or subst("[$]", data.data.id)
+				local handler = info and info.handler
+				if type(handler) == "table" then
+					handler = handler[data.data.options[1].name]
+					key = subst("$/$", key, data.data.options[1].name)
+				end
+				if type(handler) == "function" then
+					local can_use = info.can_use
+					if type(can_use) == "table" then
+						can_use = array_intersect(data.member.roles, can_use)
 					end
-				end
-				if data.data.id == command_ids.verify then
-					appcommand_ident(log, data)
-				end
-				if data.data.id == command_ids.setnick then
-					appcommand_setnick(log, data)
-				end
-				if data.data.id == command_ids.whois then
-					appcommand_whois(log, data)
-				end
-				if data.data.id == command_ids[WHOISCTX_NAME] then
-					appcommand_whois(log, data)
-				end
-				if data.data.id == command_ids[GETRQUSER_NAME] then
-					appcommand_getrquser(log, data)
-				end
-				if data.data.id == command_ids.rwhois then
-					appcommand_rwhois(log, data)
-				end
-				if data.data.id == command_ids.msglog then
-					if data.data.options[1].name == "search" then
-						appcommand_msglog_search(log, data)
+					if can_use then
+						handler(log, data)
+					else
+						local log = log:sub("duser $ has no permission to use $", data.member.user.id, key)
+						local ok, errcode, errbody = discord_interaction_respond(data, {
+							content = "You have no permission to use this command. In fact, you shouldn't even be able to see it; contact a moderator so they can fix this.",
+						})
+						if not ok then
+							log("failed to notify user: code $: $", errcode, errbody)
+						end
 					end
-					if data.data.options[1].name == "whopinged" then
-						appcommand_msglog_whopinged(log, data)
-					end
-				end
-				if data.data.id == command_ids.identmod then
-					if data.data.options[1].name == "connect" then
-						appcommand_identmod_connect(log, data)
-					end
-					if data.data.options[1].name == "disconnect" then
-						appcommand_identmod_disconnect(log, data)
-					end
-					if data.data.options[1].name == "rdisconnect" then
-						appcommand_identmod_rdisconnect(log, data)
-					end
-					if data.data.options[1].name == "dwhois" then
-						appcommand_identmod_dwhois(log, data)
-					end
+				else
+					log("no handler for app command $", key)
 				end
 			end
 		end)
