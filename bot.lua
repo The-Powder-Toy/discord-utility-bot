@@ -124,6 +124,7 @@ dbh:exec(log:sub("setting up db"), [[CREATE TABLE IF NOT EXISTS connections(
 	"duser" STRING NOT NULL,
 	"tuser" INTEGER NOT NULL,
 	"tname" STRING NOT NULL,
+	"stale" BOOLEAN NOT NULL,
 	unique ("duser"),
 	unique ("tuser")
 )]])
