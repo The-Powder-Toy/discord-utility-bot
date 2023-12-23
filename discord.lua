@@ -89,6 +89,10 @@ local intent = {
 	GUILD_SCHEDULED_EVENTS    = 1 << 16,
 }
 
+local activity_type = {
+	CUSTOM = 4,
+}
+
 math.randomseed(os.time())
 
 local API_VERSION = 10
@@ -185,6 +189,24 @@ function client_i:gateway_identify_()
 				[ "$device"  ] = self.identify_device_,
 			},
 			intents = self.intents_,
+		},
+	})
+end
+
+function client_i:gateway_presence_()
+	self:gateway_send_({
+		op = 3,
+		d = {
+			since = self.json_nullv_,
+			activities = self.effective_presence_ and {
+				{
+					name = "bagels",
+					state = self.effective_presence_,
+					type = activity_type.CUSTOM,
+				},
+			} or util.make_array({}),
+			status = "online",
+			afk = false,
 		},
 	})
 end
@@ -532,6 +554,12 @@ function client_i:gateway_talk_once_()
 			self:gateway_arm_heartbeat_()
 			self.gateway_want_pong_by_ = cqueues.monotime() + self.gateway_heartbeat_ack_timeout_
 		end
+		if self.gateway_session_id_ then
+			if self.effective_presence_ ~= self.requested_presence_ then
+				self.effective_presence_ = self.requested_presence_
+				self:gateway_presence_()
+			end
+		end
 	end
 	self.gateway_websocket_:close(1000, "bye", self.gateway_send_timeout_)
 	self.gateway_websocket_ = nil
@@ -570,6 +598,13 @@ function client_i:stop()
 		self.status_ = "stopping"
 		self.status_cond_:signal()
 	end
+end
+
+function client_i:presence(presence)
+	assert(self.status_ == "running", "not running")
+	assert(type(presence) == "string" or presence == nil)
+	self.requested_presence_ = presence
+	self.status_cond_:signal()
 end
 
 function client_i:start()

@@ -101,6 +101,90 @@ local function fetch_save(id)
 	return json
 end
 
+local function get_motd_regions(motd)
+	local regions = {}
+	local fragments = ""
+	local it = 1
+	while it <= #motd do
+		local function find(it, ch)
+			while it <= #motd do
+				if motd:sub(it, it) == ch then
+					break
+				end
+				it = it + 1
+			end
+			return it
+		end
+		local begin_region_it = find(it, "{")
+		local begin_data_it = find(begin_region_it, ":")
+		local begin_text_it = find(begin_data_it, "|")
+		local end_region_it = find(begin_text_it, "}")
+		if end_region_it > #motd then
+			break
+		end
+		local action = motd:sub(begin_region_it + 1, begin_data_it - 1)
+		local data = motd:sub(begin_data_it + 1, begin_text_it - 1)
+		local text = motd:sub(begin_text_it + 1, end_region_it - 1)
+		fragments = fragments .. motd:sub(it, begin_region_it - 1)
+		local good = false
+		if action == "a" and #data > 0 and #text > 0 then
+			local region = {}
+			local old_size = #fragments
+			fragments = fragments .. text
+			region.size = #fragments - old_size
+			region.pos = old_size + 1
+			region.action = "link"
+			region.url = data
+			table.insert(regions, region)
+			good = true
+		end
+		if not good then
+			fragments = fragments .. motd:sub(begin_region_it, end_region_it)
+		end
+		it = end_region_it + 1
+	end
+	fragments = fragments .. motd:sub(it)
+	return fragments, regions
+end
+
+local function fetch_motd()
+	local req, err = http_request.new_from_uri(subst("$/Startup.json", secret_config.backend_base))
+	if not req then
+		return nil, err
+	end
+	req.version = 1.1
+	req.cookie_store = http_cookie.new_store()
+	local deadline = cqueues.monotime() + config.powder.fetch_motd_timeout
+	local headers, stream = req:go(deadline - cqueues.monotime())
+	if not headers then
+		return nil, stream
+	end
+	local code = headers:get(":status")
+	if code ~= "200" then
+		return nil, "status code " .. code
+	end
+	local body, err = stream:get_body_as_string(deadline - cqueues.monotime())
+	if not body then
+		return nil, err
+	end
+	local ok, json = pcall(lunajson.decode, body)
+	if not ok then
+		return nil, json
+	end
+	if not (type(json) == "table" and
+	        type(json.MessageOfTheDay) == "string") then
+		return nil, "invalid response from backend"
+	end
+	local text, regions = get_motd_regions(json.MessageOfTheDay)
+	local function remove(pat)
+		text = text:gsub(pat:gsub("%.", utf8.charpattern), "")
+	end
+	remove("\b.")
+	remove("\14")
+	remove("\15...")
+	return text, regions
+end
+
 local function token_payload(token)
 	local payload = token:match("^[^%.]+%.([^%.]+)%.[^%.]+$")
 	if not payload then
@@ -158,6 +242,7 @@ return {
 	fetch_user    = fetch_user,
 	valid_save    = valid_save,
 	fetch_save    = fetch_save,
+	fetch_motd    = fetch_motd,
 	token_payload = token_payload,
 	external_auth = external_auth,
 }

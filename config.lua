@@ -13,10 +13,12 @@ return {
 		embed_rate_numerator       = 10,
 		embed_rate_denominator     = 60,
 		debug_discord_client       = false,
+		motd_to_presence_interval  = 600,
 	},
 	powder = {
 		fetch_user_timeout      = 5,
 		fetch_save_timeout      = 5,
+		fetch_motd_timeout      = 5,
 		externalauth_timeout    = 5,
 		powder_token_max_age    = 300,
 	},

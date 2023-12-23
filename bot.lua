@@ -1809,6 +1809,21 @@ local function serve_check_endpoint()
 	assert(server:loop())
 end
 
+local function motd_to_presence()
+	while true do
+		local log = log:sub("updating presence to match motd")
+		local motd, regions = powder.fetch_motd()
+		if motd then
+			cli:presence("MotD: " .. motd)
+			log("success, motd is now $", motd)
+		else
+			cli:presence(nil)
+			log("failure: $", regions)
+		end
+		cqueues.sleep(config.bot.motd_to_presence_interval)
+	end
+end
+
 local queue = cqueues.new()
 
 queue:wrap(function()
@@ -1836,6 +1851,12 @@ queue:wrap(function()
 		util.rethrow(function()
 			register_commands()
 			cli:start()
+
+			queue:wrap(function()
+				util.rethrow(function()
+					motd_to_presence()
+				end)
+			end)
 		end)
 	end)
 
