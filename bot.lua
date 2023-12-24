@@ -1814,6 +1814,22 @@ local function motd_to_presence()
 		local log = log:sub("updating presence to match motd")
 		local motd, regions = powder.fetch_motd()
 		if motd then
+			for _, region in ipairs(regions) do
+				if region.action == "link" then
+					if motd:sub(-1):find("[%.!]") then
+						motd = motd:sub(1, -2)
+					end
+					local url = region.url
+					if url:find("^http://") then
+						url = url:sub(8)
+					end
+					if not url:find("^https://") then
+						url = "https://" .. url
+					end
+					motd = motd .. ": " .. url
+					break
+				end
+			end
 			cli:presence("MotD: " .. motd)
 			log("success, motd is now $", motd)
 		else
