@@ -1588,10 +1588,10 @@ local function serve_check_endpoint()
 		local header, advice
 		if good then
 			header = "SUCCESS"
-			advice = "You can close this window or tab now."
+			advice = "You can close this page now"
 		else
 			header = "ERROR"
-			advice = "Contact a moderator on the server for help."
+			advice = "Contact a moderator on the server for help"
 		end
 		return "text/html", subst(get_file_content("check.html"), header, message, advice)
 	end
@@ -1599,7 +1599,7 @@ local function serve_check_endpoint()
 	local function stream_response(log, path, query)
 		if not path then
 			log("no path specified")
-			return 400, render(false, "Bad request, ask a moderator for help.")
+			return 400, render(false, "Bad request")
 		end
 		if path == "/style.css" then
 			return 200, "text/css", get_file_content("style.css")
@@ -1611,35 +1611,35 @@ local function serve_check_endpoint()
 			local log = log:sub("check request")
 			if not query then
 				log("no query")
-				return 400, render(false, "Bad request, ask a moderator for help.")
+				return 400, render(false, "Bad request")
 			end
 			local query_args = {}
 			for key, value in http_util.query_args(query) do
 				if query_args[key] then
 					log("duplicate query args")
-					return 400, render(false, "Bad request, ask a moderator for help.")
+					return 400, render(false, "Bad request")
 				end
 				query_args[key] = value
 			end
 			if not query_args.AppToken then
 				log("missing AppToken")
-				return 400, render(false, "Bad request, ask a moderator for help.")
+				return 400, render(false, "Bad request")
 			end
 			if not query_args.PowderToken then
 				log("missing PowderToken")
-				return 400, render(false, "Bad request, ask a moderator for help.")
+				return 400, render(false, "Bad request")
 			end
 			local payload, err = powder.token_payload(query_args.PowderToken)
 			if not payload then
 				log("bad PowderToken: $", err)
-				return 400, render(false, "Bad request, ask a moderator for help.")
+				return 400, render(false, "Bad request")
 			end
 			prune_iat_table(ident_tokens, config.bot.ident_token_max_age, function(token)
 				invalidate_ident_token(log:sub("invalidating ident token for $: pruned", ident_tokens[token].user.id), token)
 			end)
 			if not ident_tokens[query_args.AppToken] then
 				log("bad AppToken")
-				return 401, render(false, "Link invalid or expired, try running /verify again.")
+				return 401, render(false, "Link invalid or expired, try running /verify again")
 			end
 			local info = ident_tokens[query_args.AppToken]
 			invalidate_ident_token(log:sub("invalidating ident token: consumed"), query_args.AppToken)
@@ -1707,33 +1707,33 @@ local function serve_check_endpoint()
 			if not status then
 				log("failed to check PowderToken: $", err)
 				followup("failure")
-				return 503, render(false, "Authentication backend down, ask a moderator for help.")
+				return 503, render(false, "Authentication backend down")
 			end
 			if status ~= "OK" then
 				log("bad PowderToken")
 				followup("failure")
-				return 401, render(false, "Authentication backend down, ask a moderator for help.")
+				return 401, render(false, "Authentication backend down")
 			end
 			local tuser, err = powder.fetch_user(payload.name)
 			if tuser == false then
 				log("no such user")
 				followup("failure")
-				return 503, render(false, "Authentication backend down, ask a moderator for help.")
+				return 503, render(false, "Authentication backend down")
 			end
 			if not tuser then
 				log("failed to check PowderToken: $", err)
 				followup("failure")
-				return 503, render(false, "Authentication backend down, ask a moderator for help.")
+				return 503, render(false, "Authentication backend down")
 			end
 			if tuser.ID ~= tonumber(payload.sub) then
 				log("tuser and payload sub mismatch: $ ~= $", tuser.ID, payload.sub)
 				followup("failure")
-				return 503, render(false, "Authentication backend down, ask a moderator for help.")
+				return 503, render(false, "Authentication backend down")
 			end
 			if tuser.Username ~= payload.name then
 				log("tname and payload sub mismatch: $ ~= $", tuser.Username, payload.name)
 				followup("failure")
-				return 503, render(false, "Authentication backend down, ask a moderator for help.")
+				return 503, render(false, "Authentication backend down")
 			end
 			local register_time = tuser.RegisterTime and tonumber(tuser.RegisterTime)
 			local now = os.time()
@@ -1741,30 +1741,35 @@ local function serve_check_endpoint()
 			   register_time + config.bot.account_min_age > now then
 				log("account too new")
 				followup("too_new")
-				return 401, render(false, subst("Account too new, try again in $ hours.", math.ceil((register_time + config.bot.account_min_age - now) / 3600)))
+				return 401, render(false, subst("Account too new, try again in $ hours", math.ceil((register_time + config.bot.account_min_age - now) / 3600)))
 			end
 			if info.tnameupdate then
 				if info.tnameupdate ~= tuser.ID then
 					log("tuser change from $ to $ on tname update", info.tnameupdate, tuser.ID)
 					followup("failure")
-					return 401, render(false, "Please use the Powder Toy account you first verified yourself with.")
+					return 401, render(false, "Please use the Powder Toy account you first verified yourself with")
 				end
 				db_tnameupdate(log, info.user.id, tuser.Username)
 			else
 				local ok, err = db_connect(log, info.user.id, tuser.ID, tuser.Username)
 				if not ok then
-					log("constraint violation")
 					followup("failure") -- weird, shouldn't happen
-					return 409, render(false, "Account already verified, no need to do it again.")
+					local record = recheck_connection(log, db_rwhois(log, tuser.ID)[1])
+					if record and record.duser ~= info.user.id then
+						log("failure: attempt to connect duser $ with tuser $ aka $ already connected with duser $", info.user.id, tuser.ID, tuser.Username, record.duser)
+						return 409, render(false, "Powder Toy account already associated with a Discord account")
+					end
+					log("constraint violation")
+					return 409, render(false, "Account already verified, no need to do it again")
 				end
 			end
 			local role_ok = give_role(log, info.user.id)
 			log("success: connected duser $ with tuser $ aka $", info.user.id, tuser.ID, tuser.Username)
 			followup(role_ok and "ok" or "no_role", tuser.Username)
-			return 200, render(true, subst("$ is now connected with $.", info.user.global_name, tuser.Username))
+			return 200, render(true, subst("$ is now connected with $", info.user.global_name, tuser.Username))
 		end
 		log("not found: $", path)
-		return 404, render(false, "Page not found, ask a moderator for help.")
+		return 404, render(false, "Page not found")
 	end
 
 	local stream_counter = 0
