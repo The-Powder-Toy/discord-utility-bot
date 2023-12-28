@@ -11,6 +11,10 @@ local util           = require("util")
 
 local subst = util.subst
 
+local limits = {
+	CUSTOM_ACTIVITY_MAX_LENGTH = 128,
+}
+
 local message = {
 	DEFAULT = 0,
 	REPLY   = 19,
@@ -750,6 +754,7 @@ end
 
 return {
 	client                    = client,
+	limits                    = limits,
 	intent                    = intent,
 	interaction_response      = interaction_response,
 	interaction_response_flag = interaction_response_flag,

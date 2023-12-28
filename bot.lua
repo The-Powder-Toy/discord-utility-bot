@@ -1835,7 +1835,19 @@ local function motd_to_presence()
 					break
 				end
 			end
-			cli:presence("MotD: " .. motd)
+			motd = "MotD: " .. motd
+			local max_length = discord.limits.CUSTOM_ACTIVITY_MAX_LENGTH
+			if #motd > max_length then
+				local first, second = motd:match("^(.*) ([^ ]+)$")
+				if first then
+					second = " [...] " .. second
+					motd = first:sub(1, max_length - #second) .. second
+				end
+				if #motd > max_length then
+					motd = "MotD too long 🍌"
+				end
+			end
+			cli:presence(motd)
 			log("success, motd is now $", motd)
 		else
 			cli:presence(nil)
