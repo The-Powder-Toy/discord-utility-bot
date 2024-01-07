@@ -1424,8 +1424,8 @@ local function on_dispatch(_, dtype, data)
 				end
 				local mention_everyone = data.mention_everyone
 				local mentions         = get_ids(data.mentions         or {})
-				local mention_roles    = get_ids(data.mention_roles    or {})
 				local mention_channels = get_ids(data.mention_channels or {})
+				local mention_roles    = data.mention_roles or {}
 				local user = data.author and {
 					id            = data.author.id,
 					username      = data.author.username,
