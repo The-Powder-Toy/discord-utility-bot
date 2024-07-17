@@ -1,5 +1,6 @@
 local http_cookie    = require("http.cookie")
 local http_request   = require("http.request")
+local http_headers   = require("http.headers")
 local http_websocket = require("http.websocket")
 local http_util      = require("http.util")
 local lunajson       = require("lunajson")
@@ -132,6 +133,7 @@ function client_i:api_fetch_(method, path, data_in, extra)
 	req.version = 1.1 -- there is some bug in lua-http that breaks h2 + tls
 	req.headers:upsert("authorization", extra and extra.authorization or ("Bot " .. self.token_))
 	req.headers:upsert(":method", method)
+	req.headers:upsert("user-agent", self.user_agent_)
 	req.cookie_store = http_cookie.new_store()
 	if data_in then
 		if extra and extra.content_type == "urlencoded_form" then
@@ -516,6 +518,7 @@ function client_i:gateway_talk_once_()
 	if not self.gateway_websocket_ then
 		self:gateway_die_("failed to connect to gateway: $", err)
 	end
+	self.gateway_websocket_.request.headers:upsert("user-agent", self.user_agent_)
 	local ok, err, errno = self.gateway_websocket_:connect(self.gateway_connect_timeout_)
 	if not ok then
 		self:gateway_die_("failed to connect to gateway: errno $: $", errno, err)
@@ -728,6 +731,7 @@ local function client(params)
 		identify_os_                   = params.identify_os or "linux",
 		identify_browser_              = params.identify_browser or "bagels",
 		identify_device_               = params.identify_device or "bagels",
+		user_agent_                    = params.user_agent or "bagels",
 		rate_limit_bucket_primitives_  = { [ "" ] = "global" },
 		rate_limit_buckets_            = { [ "global" ] = global_rate_limit() },
 		request_queue_by_endpoint_     = {},

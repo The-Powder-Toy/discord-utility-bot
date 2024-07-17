@@ -22,6 +22,7 @@ local function fetch_user(tname)
 	if not req then
 		return nil, err
 	end
+	req.headers:upsert("user-agent", config.bot.http_server)
 	req.version = 1.1
 	req.cookie_store = http_cookie.new_store()
 	local deadline = cqueues.monotime() + config.powder.fetch_user_timeout
@@ -68,6 +69,7 @@ local function fetch_save(id)
 	if not req then
 		return nil, err
 	end
+	req.headers:upsert("user-agent", config.bot.http_server)
 	req.version = 1.1
 	req.cookie_store = http_cookie.new_store()
 	local deadline = cqueues.monotime() + config.powder.fetch_save_timeout
@@ -152,6 +154,7 @@ local function fetch_motd()
 	if not req then
 		return nil, err
 	end
+	req.headers:upsert("user-agent", config.bot.http_server)
 	req.version = 1.1
 	req.cookie_store = http_cookie.new_store()
 	local deadline = cqueues.monotime() + config.powder.fetch_motd_timeout
@@ -215,6 +218,7 @@ local function external_auth(powder_token)
 	if not req then
 		return nil, "failed to create request: " .. err
 	end
+	req.headers:upsert("user-agent", config.bot.http_server)
 	req.version = 1.1
 	req.cookie_store = http_cookie.new_store()
 	local deadline = cqueues.monotime() + config.powder.externalauth_timeout

@@ -1236,6 +1236,10 @@ local function rate_limit_embeds(duser)
 	return #user_log <= config.bot.embed_rate_numerator
 end
 
+local function embed_escape(str)
+	return (str:gsub("[^%w \128-\255]", "\\%1"))
+end
+
 local function do_save_embed(log, id, data, report_failure)
 	local log = log:sub("do_save_embed by duser $ for id $ in dchannel $", data.author.id, id, data.channel_id)
 	if not rate_limit_embeds(data.author.id) then
@@ -1263,15 +1267,15 @@ local function do_save_embed(log, id, data, report_failure)
 			embeds = {
 				{
 					type = "rich",
-					title = save.Name,
-					description = save.Description,
+					title = embed_escape(save.Name),
+					description = embed_escape(save.Description),
 					color = secret_config.theme_color,
 					timestamp = save.Date ~= 0 and util.to_iso8601(save.Date) or nil,
 					image = {
 						url = subst("http://static.powdertoy.co.uk/$.png?discordCacheWorkaround=$", id, save.Date),
 					},
 					author = {
-						name = save.Username,
+						name = embed_escape(save.Username),
 						url = subst("$/User.html?Name=$", secret_config.backend_base, save.Username),
 					},
 					footer = {
@@ -1879,6 +1883,7 @@ queue:wrap(function()
 		                       discord.intent.MESSAGE_CONTENT,
 		identify_browser     = config.bot.http_server,
 		identify_device      = config.bot.http_server,
+		user_agent           = config.bot.http_server,
 		debug_print          = debug_print,
 	})
 
