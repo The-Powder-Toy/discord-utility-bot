@@ -174,7 +174,9 @@ local function get_effective_dname(duser, dname)
 		log("failed: status $: $", errcode, errbody)
 		return nil, errcode, errbody
 	end
-	return nick or dname, errcode, errbody
+	local effective = nick or dname
+	log("success: nick is $, effective is $", nick, effective)
+	return effective, errcode, errbody
 end
 
 local function assert_api_fetch(data, errcode, errbody)

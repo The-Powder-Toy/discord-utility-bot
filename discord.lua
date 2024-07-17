@@ -652,7 +652,7 @@ end
 function client_i:get_user_nick(guild, user)
 	local data, errcode, errbody, errheaders = self:patient_api_fetch_("GET /guilds/#/members/$", guild, user)
 	if not data then
-		return errcode, errbody, errheaders
+		return nil, errcode, errbody, errheaders
 	end
 	return data.nick or false
 end
@@ -660,7 +660,7 @@ end
 function client_i:get_user_roles(guild, user)
 	local data, errcode, errbody, errheaders = self:patient_api_fetch_("GET /guilds/#/members/$", guild, user)
 	if not data then
-		return errcode, errbody, errheaders
+		return nil, errcode, errbody, errheaders
 	end
 	return data.roles
 end
