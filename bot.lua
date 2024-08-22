@@ -1461,7 +1461,7 @@ local function on_dispatch(_, dtype, data)
 					end
 				end
 				if dtype == "MESSAGE_UPDATE" then
-					status = "updated"
+					status = "edited"
 					timestamp = data.edited_timestamp and util.from_iso8601(discord.normalize_iso8601(data.edited_timestamp))
 					if not timestamp then
 						timestamp = os.time()
