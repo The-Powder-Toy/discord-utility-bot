@@ -7,7 +7,7 @@ return {
 		recheck_cache_max_age      = 300,
 		account_min_age            = 86400,
 		rquser_max_log             = 100,
-		message_log_max_blob_bytes = 10000000,
+		message_log_max_blob_bytes = 5000000,
 		message_log_page_size      = 1000,
 		message_log_max_sessions   = 10,
 		embed_rate_numerator       = 10,
