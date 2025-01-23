@@ -1275,7 +1275,7 @@ local function do_save_embed(log, id, data, report_failure)
 						url = subst("http://static.powdertoy.co.uk/$.png?discordCacheWorkaround=$", id, save.Date),
 					},
 					author = {
-						name = embed_escape(save.Username),
+						name = save.Username,
 						url = subst("$/User.html?Name=$", secret_config.backend_base, save.Username),
 					},
 					footer = {
