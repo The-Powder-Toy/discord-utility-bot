@@ -31,6 +31,10 @@ local pcre2             = require("rex_pcre2")
 
 local json_nullv = {}
 
+local function embed_escape(str)
+	return (str:gsub("[^%w \128-\255]", "\\%1"))
+end
+
 local WHOISCTX_NAME = "Powder Toy Profile"
 local GETRQUSER_NAME = "Get Requesting User"
 local command_custom_ids = {
@@ -351,7 +355,7 @@ local function appcommand_ident(log, data)
 			local ok, errcode, errbody
 			if role_ok then
 				ok, errcode, errbody = discord_interaction_respond(data, {
-					content = subst("Your Powder Toy account is already connected: $", record.tname),
+					content = subst("Your Powder Toy account is already connected: $", embed_escape(record.tname)),
 					url     = subst("$/User.html?Name=$", secret_config.backend_base, record.tname),
 					label   = subst("View $'s Powder Toy profile", record.tname),
 				})
@@ -515,12 +519,12 @@ local function appcommand_whois(log, data)
 		if record.stale == 1 then
 			log("found duser $: tname was $", duser, record.tname)
 			ok, errcode, errbody = discord_interaction_respond(data, {
-				content = subst("<@$> was $.", duser, record.tname),
+				content = subst("<@$> was $.", duser, embed_escape(record.tname)),
 			})
 		else
 			log("found duser $: tname is $", duser, record.tname)
 			ok, errcode, errbody = discord_interaction_respond(data, {
-				content = subst("<@$> is $.", duser, record.tname),
+				content = subst("<@$> is $.", duser, embed_escape(record.tname)),
 				url     = subst("$/User.html?Name=$", secret_config.backend_base, record.tname),
 				label   = subst("View $'s Powder Toy profile", record.tname),
 			})
@@ -604,18 +608,18 @@ local function appcommand_rwhois(log, data)
 			if record.stale == 1 then
 				log("found tuser $: duser was $", tuser.ID, record.duser)
 				ok, errcode, errbody = discord_interaction_respond(data, {
-					content = subst("$ was <@$>.", tuser.Username, record.duser),
+					content = subst("$ was <@$>.", embed_escape(tuser.Username), record.duser),
 				})
 			else
 				log("found tuser $: duser is $", tuser.ID, record.duser)
 				ok, errcode, errbody = discord_interaction_respond(data, {
-					content = subst("$ is <@$>.", tuser.Username, record.duser),
+					content = subst("$ is <@$>.", embed_escape(tuser.Username), record.duser),
 				})
 			end
 		else
 			log("tuser $ not found", tuser.ID)
 			ok, errcode, errbody = discord_interaction_respond(data, {
-				content = subst("$ has not connected a Discord account.", tuser.Username),
+				content = subst("$ has not connected a Discord account.", embed_escape(tuser.Username)),
 			})
 		end
 	end
@@ -830,7 +834,7 @@ local function appcommand_msglog_search(log, data)
 		if not ok then
 			log("bad regex")
 			local ok, errcode, errbody = discord_interaction_respond(data, {
-				content = subst("Invalid regex: $", err),
+				content = subst("Invalid regex: $", embed_escape(err)),
 			})
 			if not ok then
 				log("failed to notify user: code $: $", errcode, errbody)
@@ -1038,7 +1042,7 @@ local function appcommand_identmod_connect(log, data)
 			elseif recheck_connection(log, db_rwhois(log, tuser.ID)[1]) then
 				log("found conflicting tuser $", tuser.ID)
 				ok, errcode, errbody = discord_interaction_respond(data, {
-					content = subst("$ has already connected a Discord account, try disconnecting it first.", tuser.Username),
+					content = subst("$ has already connected a Discord account, try disconnecting it first.", embed_escape(tuser.Username)),
 				})
 			else
 				log("found no conflicting entry, weird")
@@ -1153,7 +1157,7 @@ local function appcommand_identmod_rdisconnect(log, data)
 		else
 			log("tuser $ not found", tuser.ID)
 			ok, errcode, errbody = discord_interaction_respond(data, {
-				content = subst("$ has not connected a Discord account.", tuser.Username),
+				content = subst("$ has not connected a Discord account.", embed_escape(tuser.Username)),
 			})
 		end
 	end
@@ -1234,10 +1238,6 @@ local function rate_limit_embeds(duser)
 	end
 	table.insert(user_log, now)
 	return #user_log <= config.bot.embed_rate_numerator
-end
-
-local function embed_escape(str)
-	return (str:gsub("[^%w \128-\255]", "\\%1"))
 end
 
 local function do_save_embed(log, id, data, report_failure)
@@ -1351,7 +1351,7 @@ local function do_user_embed(log, tname, data, report_failure)
 			embeds = {
 				{
 					type = "rich",
-					title = tuser.Username,
+					title = embed_escape(tuser.Username),
 					description = table.concat(desc_info, "; ") .. ".",
 					color = secret_config.theme_color,
 					thumbnail = {
@@ -1684,7 +1684,7 @@ local function serve_check_endpoint()
 					if status == "ok" then
 						local log = log:sub("sending welcome message")
 						local response_data = discord_response_data({
-							content         = subst("Welcome <@$> to the server! Their Powder Toy account is $.", info.user.id, tname),
+							content         = subst("Welcome <@$> to the server! Their Powder Toy account is $.", info.user.id, embed_escape(tname)),
 							url             = subst("$/User.html?Name=$", secret_config.backend_base, tname),
 							label           = subst("View $'s Powder Toy profile", tname),
 							enable_mentions = true,
