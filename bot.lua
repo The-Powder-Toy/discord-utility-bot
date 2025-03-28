@@ -248,6 +248,8 @@ local function recheck_connection(log, record)
 			elseif tuser == false or tuser.ID ~= record.tuser then
 				if record.stale == 0 then
 					local log = log:sub("$ has changed usernames, dropping connection", record.tname)
+					db_markstale(log, record.duser)
+					take_role(log, record.duser)
 					if guild_members[record.duser] then
 						local ok, errcode, errbody = cli:create_channel_message(secret_config.verification_id, discord_response_data({
 							content = subst("<@$> You seem to have changed your username on Powder Toy. Use **/verify** or the button below to verify yourself again.", record.duser),
@@ -270,8 +272,6 @@ local function recheck_connection(log, record)
 							log("failed to notify user: code $: $", errcode, errbody)
 						end
 					end
-					db_markstale(log, record.duser)
-					take_role(log, record.duser)
 					record.stale = 1
 				end
 			else
