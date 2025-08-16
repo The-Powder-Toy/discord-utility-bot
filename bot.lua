@@ -1272,7 +1272,7 @@ local function do_save_embed(log, id, data, report_failure)
 					color = secret_config.theme_color,
 					timestamp = save.Date ~= 0 and util.to_iso8601(save.Date) or nil,
 					image = {
-						url = subst("http://static.powdertoy.co.uk/$.png?discordCacheWorkaround=$", id, save.Date),
+						url = subst("https://static.powdertoy.co.uk/$.png?discordCacheWorkaround=$", id, save.Date),
 					},
 					author = {
 						name = save.Username,
