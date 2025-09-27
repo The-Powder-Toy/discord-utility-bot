@@ -436,7 +436,7 @@ function client_i:patient_api_fetch_(endpoint, ...)
 					-- shouldn't be possible, but let's just wait however much discord wants us to wait
 					retry_in = assert(tonumber(headers:get("retry-after")))
 					-- local errdata = lunajson.decode(errbody)
-					retry_in = errdata.retry_after
+					-- retry_in = errdata.retry_after
 					local info = {}
 					table.insert(info, subst("endpoint = $", endpoint))
 					table.insert(info, subst("x-ratelimit-limit = $", headers:get("x-ratelimit-limit")))
