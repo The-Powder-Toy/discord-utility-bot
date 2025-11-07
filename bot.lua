@@ -1785,9 +1785,11 @@ local function serve_check_endpoint()
 		onstream = function(_, stream)
 			stream_counter = stream_counter + 1
 			local log = log:sub("request $", stream_counter)
-			local headers_in, err, errno = stream:get_headers()
+			local deadline = cqueues.monotime() + config.bot.http_response_timeout
+			local headers_in, err, errno = stream:get_headers(deadline - cqueues.monotime())
 			if not headers_in then
 				log("failed to get headers: code $: $", errno, err)
+				return
 			end
 			local match = lpeg_patterns_uri.uri_reference:match(headers_in:get(":path"))
 			local _, from = stream.connection:peername()
@@ -1803,7 +1805,6 @@ local function serve_check_endpoint()
 			headers_out:append("server", config.bot.http_server)
 			headers_out:append("date", http_util.imf_date())
 			headers_out:append("content-type", content_type)
-			local deadline = cqueues.monotime() + config.bot.http_response_timeout
 			local ok, err, errno = stream:write_headers(headers_out, false, deadline - cqueues.monotime())
 			if not ok then
 				log("write_headers failed: code $: $", errno, err)
