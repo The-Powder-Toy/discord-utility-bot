@@ -5,8 +5,8 @@
 	--main-background-color: var(--main-dark-color);
 	--main-foreground-color: var(--main-light-color);
 	--main-font-size: 5mm;
-	--font-sans-serif: 'Raleway', sans-serif;
-	--font-serif: 'Crete Round', serif;
+	--font-sans-serif: sans-serif;
+	--font-serif: serif;
 }
 
 * {
