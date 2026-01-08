@@ -38,9 +38,10 @@ end
 local WHOISCTX_NAME = "Powder Toy Profile"
 local GETRQUSER_NAME = "Get Requesting User"
 local command_custom_ids = {
-	verify               = "verify",
-	setnick              = "setnick",
-	msglog_search_prefix = "msglog_search",
+	verify                  = "verify",
+	setnick                 = "setnick",
+	msglog_search_prefix    = "msglog_search",
+	identmod_connect_prefix = "identmod_connect",
 }
 
 assert(openssl_rand.ready())
@@ -998,15 +999,20 @@ add_command({
 local function appcommand_identmod_connect(log, data)
 	local duser, tname
 	local giverole = true
-	for _, option in pairs(data.data.options[1].options) do
-		if option.name == "duser" then
-			duser = option.value
-		end
-		if option.name == "tname" then
-			tname = option.value
-		end
-		if option.name == "giverole" then
-			giverole = option.value
+	if data.data.custom_id then
+		local _
+		_, duser, tname = table.unpack(util.split(data.data.custom_id, "/"))
+	else
+		for _, option in pairs(data.data.options[1].options) do
+			if option.name == "duser" then
+				duser = option.value
+			end
+			if option.name == "tname" then
+				tname = option.value
+			end
+			if option.name == "giverole" then
+				giverole = option.value
+			end
 		end
 	end
 	local log = log:sub("appcommand_identmod_connect by duser $ for duser $ and tname $ with giverole $", data.member.user.id, duser, tname, giverole)
@@ -1549,6 +1555,9 @@ local function on_dispatch(_, dtype, data)
 				if data.data.custom_id:match("^([^/]+)/") == command_custom_ids.msglog_search_prefix then
 					appcommand_msglog_search(log, data)
 				end
+				if data.data.custom_id:match("^([^/]+)/") == command_custom_ids.identmod_connect_prefix then
+					appcommand_identmod_connect(log, data)
+				end
 			end
 			if dtype == "INTERACTION_CREATE" and data.type == discord.interaction.APPLICATION_COMMAND then
 				local info = command_id_to_info[data.data.id]
@@ -1657,6 +1666,24 @@ local function serve_check_endpoint()
 						content = "An error occurred while trying verify you via this link. Contact " .. moderators_str .. " for help.",
 					})
 				elseif status == "too_new" then
+					do
+						local log = log:sub("sending message to staff about account being too new")
+						local response_data = discord_response_data({
+							content = subst("<@$> has failed verification as $ due to the latter account being too new. Please take a look and use the button below to override this decision and complete the verification process.", info.user.id, embed_escape(tname)),
+							url     = subst("$/User.html?Name=$", secret_config.backend_base, tname),
+							label   = subst("View $'s Powder Toy profile", tname),
+						})
+						table.insert(response_data.components[1].components, {
+							type      = discord.component.BUTTON,
+							style     = discord.component_button.PRIMARY,
+							custom_id = table.concat({ command_custom_ids.identmod_connect_prefix, info.user.id, tname }, "/"),
+							label     = "Complete verification",
+						})
+						local ok, errcode, errbody = cli:create_channel_message(secret_config.mod_channel_id, response_data)
+						if not ok then
+							log("failed to send message: code $: $", errcode, errbody)
+						end
+					end
 					ok, errcode, errbody = discord_interaction_followup(info.followup, {
 						content = "Your account is too new, try again later.",
 					})
@@ -1746,7 +1773,7 @@ local function serve_check_endpoint()
 			if register_time and -- very old account if the property doesn't exist
 			   register_time + config.bot.account_min_age > now then
 				log("account too new")
-				followup("too_new")
+				followup("too_new", tuser.Username)
 				return 401, render(false, subst("Account too new, try again in $ hours", math.ceil((register_time + config.bot.account_min_age - now) / 3600)))
 			end
 			if info.tnameupdate then

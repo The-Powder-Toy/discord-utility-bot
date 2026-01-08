@@ -93,6 +93,7 @@ return {
     mod_role_ids         = { "000000000000000007", "000000000000000008" }, -- roles to accept Mod-only requests from
     welcome_id           = "000000000000000009", -- channel to send welcome messages to (#welcome)
     verification_id      = "000000000000000010", -- channel to send verification requests to (#verification)
+    mod_channel_id       = "000000000000000013", -- channel to send staff-oriented messages to
     embed_muted_role_ids = { "000000000000000011", "000000000000000012" }, -- roles to ignore embed request from
     backend_audience     = "ccccccccpotatoccccccc", -- backend audience (contact the backend maintainer for further info)
     backend_base         = "https://example.com", -- backend url (contact the backend maintainer for further info)
