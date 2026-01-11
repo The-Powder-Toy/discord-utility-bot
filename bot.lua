@@ -172,7 +172,7 @@ local function get_roles(log, duser)
 	return data
 end
 
-local function get_effective_dname(duser)
+local function get_effective_dname(log, duser)
 	local log = log:sub("getting effective dname of duser $", duser)
 	local nick, errcode, errbody = cli:get_user_nick(secret_config.guild_id, duser)
 	if nick == nil then
@@ -180,8 +180,9 @@ local function get_effective_dname(duser)
 		return nil, errcode, errbody
 	end
 	local global_name = errcode
-	local effective = nick or global_name
-	log("success: nick is $, global name is $, effective is $", nick, global_name, effective)
+	local username = errbody
+	local effective = nick or global_name or username
+	log("success: nick is $, global name is $, username is $, effective is $", nick, global_name, username, effective)
 	return effective
 end
 
@@ -434,7 +435,7 @@ local function appcommand_setnick(log, data)
 	local record = recheck_connection(log, db_whois(log, data.member.user.id)[1])
 	local ok, errcode, errbody
 	if record then
-		local edname = get_effective_dname(data.member.user.id)
+		local edname = get_effective_dname(log, data.member.user.id)
 		if not edname then
 			ok, errcode, errbody = discord_interaction_respond(data, {
 				content = "Your nickname could not be set. Contact " .. moderators_str .. " for help.",
@@ -1005,7 +1006,7 @@ local function send_welcome(log, duser, tname)
 		label           = subst("View $'s Powder Toy profile", tname),
 		enable_mentions = true,
 	})
-	local edname = get_effective_dname(duser)
+	local edname = get_effective_dname(log, duser)
 	if edname and tname ~= edname then
 		response_data.content = response_data.content .. " Consider using your Powder Toy name as your nickname on this server."
 		table.insert(response_data.components[1].components, {
