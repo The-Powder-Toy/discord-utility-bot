@@ -657,7 +657,7 @@ function client_i:get_user_nick(guild, user)
 	if not data then
 		return nil, errcode, errbody, errheaders
 	end
-	return data.nick or false
+	return data.nick or false, data.user.global_name
 end
 
 function client_i:get_user_roles(guild, user)

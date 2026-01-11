@@ -38,10 +38,10 @@ end
 local WHOISCTX_NAME = "Powder Toy Profile"
 local GETRQUSER_NAME = "Get Requesting User"
 local command_custom_ids = {
-	verify                  = "verify",
-	setnick                 = "setnick",
-	msglog_search_prefix    = "msglog_search",
-	identmod_connect_prefix = "identmod_connect",
+	verify                = "verify",
+	setnick               = "setnick",
+	msglog_search_prefix  = "msglog_search",
+	completefailed_prefix = "completefailed",
 }
 
 assert(openssl_rand.ready())
@@ -172,16 +172,17 @@ local function get_roles(log, duser)
 	return data
 end
 
-local function get_effective_dname(duser, dname)
+local function get_effective_dname(duser)
 	local log = log:sub("getting effective dname of duser $", duser)
 	local nick, errcode, errbody = cli:get_user_nick(secret_config.guild_id, duser)
 	if nick == nil then
 		log("failed: status $: $", errcode, errbody)
 		return nil, errcode, errbody
 	end
-	local effective = nick or dname
-	log("success: nick is $, effective is $", nick, effective)
-	return effective, errcode, errbody
+	local global_name = errcode
+	local effective = nick or global_name
+	log("success: nick is $, global name is $, effective is $", nick, global_name, effective)
+	return effective
 end
 
 local function assert_api_fetch(data, errcode, errbody)
@@ -433,7 +434,7 @@ local function appcommand_setnick(log, data)
 	local record = recheck_connection(log, db_whois(log, data.member.user.id)[1])
 	local ok, errcode, errbody
 	if record then
-		local edname = get_effective_dname(data.member.user.id, data.member.user.global_name)
+		local edname = get_effective_dname(data.member.user.id)
 		if not edname then
 			ok, errcode, errbody = discord_interaction_respond(data, {
 				content = "Your nickname could not be set. Contact " .. moderators_str .. " for help.",
@@ -996,26 +997,109 @@ add_command({
 	can_use_ = secret_config.mod_role_ids,
 })
 
+local function send_welcome(log, duser, tname)
+	local log = log:sub("sending welcome message")
+	local response_data = discord_response_data({
+		content         = subst("Welcome <@$> to the server! Their Powder Toy account is $.", duser, embed_escape(tname)),
+		url             = subst("$/User.html?Name=$", secret_config.backend_base, tname),
+		label           = subst("View $'s Powder Toy profile", tname),
+		enable_mentions = true,
+	})
+	local edname = get_effective_dname(duser)
+	if edname and tname ~= edname then
+		response_data.content = response_data.content .. " Consider using your Powder Toy name as your nickname on this server."
+		table.insert(response_data.components[1].components, {
+			type      = discord.component.BUTTON,
+			style     = discord.component_button.PRIMARY,
+			custom_id = command_custom_ids.setnick,
+			label     = "Update your nickname",
+		})
+	end
+	local ok, errcode, errbody = cli:create_channel_message(secret_config.welcome_id, response_data)
+	if not ok then
+		log("failed to notify user: code $: $", errcode, errbody)
+	end
+end
+
+local function friendly_connect(log, data, duser, tname, tid, giverole, welcome)
+	local ok, errcode, errbody
+	local log = log:sub("found tname $, connecting", tname)
+	local cok, cerr = db_connect(log, duser, tid, tname)
+	if not cok then
+		log("constraint violation")
+		local record_from_duser = recheck_connection(log, db_whois(log, duser)[1])
+		if record_from_duser then
+			if record_from_duser.tuser == tid then
+				log("found conflicting duser $ with matching tuser $", duser, tid)
+				db_tnameupdate(log, duser, tname)
+				cok = true
+			else
+				log("found conflicting duser $", duser)
+				ok, errcode, errbody = discord_interaction_respond(data, {
+					content = subst("<@$> has already connected a Powder Toy account, try disconnecting it first.", duser),
+				})
+			end
+		elseif recheck_connection(log, db_rwhois(log, tid)[1]) then
+			log("found conflicting tuser $", tid)
+			ok, errcode, errbody = discord_interaction_respond(data, {
+				content = subst("$ has already connected a Discord account, try disconnecting it first.", embed_escape(tname)),
+			})
+		else
+			log("found no conflicting entry, weird")
+			ok, errcode, errbody = discord_interaction_respond(data, {
+				content = "Database inconsistency detected. Try again, and if the issue persists, contact an administrator for help.",
+			})
+		end
+	end
+	if cok then
+		local role_ok
+		if giverole then
+			role_ok = give_role(log, duser)
+		end
+		if giverole and not role_ok then
+			ok, errcode, errbody = discord_interaction_respond(data, {
+				content = "Done, but the role failed to be assigned.",
+			})
+		else
+			ok, errcode, errbody = discord_interaction_respond(data, {
+				content = "Done.",
+			})
+		end
+		if welcome then
+			send_welcome(log, duser, tname)
+		end
+	end
+	return ok, errcode, errbody
+end
+
+local function appcommand_completefailed(log, data)
+	local _, duser, tname, tidstr = table.unpack(util.split(data.data.custom_id, "/"))
+	local log = log:sub("appcommand_completefailed by duser $ for duser $ and tname $", data.member.user.id, duser, tname)
+	local ok, errcode, errbody = friendly_connect(log, data, duser, tname, tonumber(tidstr), true, true)
+	if not ok then
+		log("failed to notify user: code $: $", errcode, errbody)
+	end
+end
+
 local function appcommand_identmod_connect(log, data)
 	local duser, tname
 	local giverole = true
-	if data.data.custom_id then
-		local _
-		_, duser, tname = table.unpack(util.split(data.data.custom_id, "/"))
-	else
-		for _, option in pairs(data.data.options[1].options) do
-			if option.name == "duser" then
-				duser = option.value
-			end
-			if option.name == "tname" then
-				tname = option.value
-			end
-			if option.name == "giverole" then
-				giverole = option.value
-			end
+	local welcome = false
+	for _, option in pairs(data.data.options[1].options) do
+		if option.name == "duser" then
+			duser = option.value
+		end
+		if option.name == "tname" then
+			tname = option.value
+		end
+		if option.name == "giverole" then
+			giverole = option.value
+		end
+		if option.name == "welcome" then
+			welcome = option.value
 		end
 	end
-	local log = log:sub("appcommand_identmod_connect by duser $ for duser $ and tname $ with giverole $", data.member.user.id, duser, tname, giverole)
+	local log = log:sub("appcommand_identmod_connect by duser $ for duser $ and tname $ with giverole $ and welcome $", data.member.user.id, duser, tname, giverole, welcome)
 	local tuser, err = powder.fetch_user(tname)
 	if tuser == nil then
 		log("backend fetch failed: $", err)
@@ -1029,49 +1113,7 @@ local function appcommand_identmod_connect(log, data)
 	end
 	local ok, errcode, errbody
 	if tuser then
-		log("found tname $, connecting", tname)
-		local cok, cerr = db_connect(log, duser, tuser.ID, tuser.Username)
-		if not cok then
-			log("constraint violation")
-			local record_from_duser = recheck_connection(log, db_whois(log, duser)[1])
-			if record_from_duser then
-				if record_from_duser.tuser == tuser.ID then
-					log("found conflicting duser $ with matching tuser $", duser, tuser.ID)
-					db_tnameupdate(log, duser, tuser.Username)
-					cok = true
-				else
-					log("found conflicting duser $", duser)
-					ok, errcode, errbody = discord_interaction_respond(data, {
-						content = subst("<@$> has already connected a Powder Toy account, try disconnecting it first.", duser),
-					})
-				end
-			elseif recheck_connection(log, db_rwhois(log, tuser.ID)[1]) then
-				log("found conflicting tuser $", tuser.ID)
-				ok, errcode, errbody = discord_interaction_respond(data, {
-					content = subst("$ has already connected a Discord account, try disconnecting it first.", embed_escape(tuser.Username)),
-				})
-			else
-				log("found no conflicting entry, weird")
-				ok, errcode, errbody = discord_interaction_respond(data, {
-					content = "Database inconsistency detected. Try again, and if the issue persists, contact an administrator for help.",
-				})
-			end
-		end
-		if cok then
-			local role_ok
-			if giverole then
-				role_ok = give_role(log, duser)
-			end
-			if giverole and not role_ok then
-				ok, errcode, errbody = discord_interaction_respond(data, {
-					content = "Done, but the role failed to be assigned.",
-				})
-			else
-				ok, errcode, errbody = discord_interaction_respond(data, {
-					content = "Done.",
-				})
-			end
-		end
+		ok, errcode, errbody = friendly_connect(log, data, duser, tuser.Username, tuser.ID, giverole, welcome)
 	else
 		log("tname $ not found", tname)
 		ok, errcode, errbody = discord_interaction_respond(data, {
@@ -1184,6 +1226,7 @@ add_command({
 				{ name = "duser"   , description = "Discord user to connect"                                      , type = discord.command_option.USER   , required = true },
 				{ name = "tname"   , description = "Powder Toy user to connect with"                              , type = discord.command_option.STRING , required = true },
 				{ name = "giverole", description = "Give the Discord user the bot-managed role (defaults to true)", type = discord.command_option.BOOLEAN                  },
+				{ name = "welcome" , description = "Send the user a welcome message (defaults to false)"          , type = discord.command_option.BOOLEAN                  },
 			},
 			handler_ = appcommand_identmod_connect,
 		},
@@ -1555,8 +1598,8 @@ local function on_dispatch(_, dtype, data)
 				if data.data.custom_id:match("^([^/]+)/") == command_custom_ids.msglog_search_prefix then
 					appcommand_msglog_search(log, data)
 				end
-				if data.data.custom_id:match("^([^/]+)/") == command_custom_ids.identmod_connect_prefix then
-					appcommand_identmod_connect(log, data)
+				if data.data.custom_id:match("^([^/]+)/") == command_custom_ids.completefailed_prefix then
+					appcommand_completefailed(log, data)
 				end
 			end
 			if dtype == "INTERACTION_CREATE" and data.type == discord.interaction.APPLICATION_COMMAND then
@@ -1658,7 +1701,7 @@ local function serve_check_endpoint()
 			end
 			local info = ident_tokens[query_args.AppToken]
 			invalidate_ident_token(log:sub("invalidating ident token: consumed"), query_args.AppToken)
-			local function followup(status, tname)
+			local function followup(status, tname, tid)
 				local log = log:sub("sending followup message")
 				local ok, errcode, errbody
 				if status == "failure" then
@@ -1676,7 +1719,7 @@ local function serve_check_endpoint()
 						table.insert(response_data.components[1].components, {
 							type      = discord.component.BUTTON,
 							style     = discord.component_button.PRIMARY,
-							custom_id = table.concat({ command_custom_ids.identmod_connect_prefix, info.user.id, tname }, "/"),
+							custom_id = table.concat({ command_custom_ids.completefailed_prefix, info.user.id, tname, tostring(tid) }, "/"),
 							label     = "Complete verification",
 						})
 						local ok, errcode, errbody = cli:create_channel_message(secret_config.mod_channel_id, response_data)
@@ -1709,27 +1752,7 @@ local function serve_check_endpoint()
 						},
 					})
 					if status == "ok" then
-						local log = log:sub("sending welcome message")
-						local response_data = discord_response_data({
-							content         = subst("Welcome <@$> to the server! Their Powder Toy account is $.", info.user.id, embed_escape(tname)),
-							url             = subst("$/User.html?Name=$", secret_config.backend_base, tname),
-							label           = subst("View $'s Powder Toy profile", tname),
-							enable_mentions = true,
-						})
-						local edname = get_effective_dname(info.user.id, info.user.global_name)
-						if edname and tname ~= edname then
-							response_data.content = response_data.content .. " Consider using your Powder Toy name as your nickname on this server."
-							table.insert(response_data.components[1].components, {
-								type = discord.component.BUTTON,
-								style = discord.component_button.PRIMARY,
-								custom_id = command_custom_ids.setnick,
-								label = "Update your nickname",
-							})
-						end
-						local ok, errcode, errbody = cli:create_channel_message(secret_config.welcome_id, response_data)
-						if not ok then
-							log("failed to notify user: code $: $", errcode, errbody)
-						end
+						send_welcome(log, info.user.id, tname)
 					end
 				end
 				if not ok then
@@ -1773,7 +1796,7 @@ local function serve_check_endpoint()
 			if register_time and -- very old account if the property doesn't exist
 			   register_time + config.bot.account_min_age > now then
 				log("account too new")
-				followup("too_new", tuser.Username)
+				followup("too_new", tuser.Username, tuser.ID)
 				return 401, render(false, subst("Account too new, try again in $ hours", math.ceil((register_time + config.bot.account_min_age - now) / 3600)))
 			end
 			if info.tnameupdate then
@@ -1798,7 +1821,7 @@ local function serve_check_endpoint()
 			end
 			local role_ok = give_role(log, info.user.id)
 			log("success: connected duser $ with tuser $ aka $", info.user.id, tuser.ID, tuser.Username)
-			followup(role_ok and "ok" or "no_role", tuser.Username)
+			followup(role_ok and "ok" or "no_role", tuser.Username, tuser.ID)
 			return 200, render(true, subst("$ is now connected with $", info.user.global_name, tuser.Username))
 		end
 		log("not found: $", path)
