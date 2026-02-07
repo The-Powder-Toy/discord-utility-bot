@@ -998,23 +998,26 @@ add_command({
 	can_use_ = secret_config.mod_role_ids,
 })
 
-local function send_welcome(log, duser, tname)
+local function send_welcome(log, duser, tname, tnameupdate)
 	local log = log:sub("sending welcome message")
 	local response_data = discord_response_data({
-		content         = subst("Welcome <@$> to the server! Their Powder Toy account is $.", duser, embed_escape(tname)),
+		content         = tnameupdate and subst("<@$> is now known as $.", duser, embed_escape(tname)) or
+		                                  subst("Welcome <@$> to the server! Their Powder Toy account is $.", duser, embed_escape(tname)),
 		url             = subst("$/User.html?Name=$", secret_config.backend_base, tname),
 		label           = subst("View $'s Powder Toy profile", tname),
 		enable_mentions = true,
 	})
-	local edname = get_effective_dname(log, duser)
-	if edname and tname ~= edname then
-		response_data.content = response_data.content .. " Consider using your Powder Toy name as your nickname on this server."
-		table.insert(response_data.components[1].components, {
-			type      = discord.component.BUTTON,
-			style     = discord.component_button.PRIMARY,
-			custom_id = command_custom_ids.setnick,
-			label     = "Update your nickname",
-		})
+	if not tnameupdate then
+		local edname = get_effective_dname(log, duser)
+		if edname and tname ~= edname then
+			response_data.content = response_data.content .. " Consider using your Powder Toy name as your nickname on this server."
+			table.insert(response_data.components[1].components, {
+				type      = discord.component.BUTTON,
+				style     = discord.component_button.PRIMARY,
+				custom_id = command_custom_ids.setnick,
+				label     = "Update your nickname",
+			})
+		end
 	end
 	local ok, errcode, errbody = cli:create_channel_message(secret_config.welcome_id, response_data)
 	if not ok then
@@ -1067,7 +1070,7 @@ local function friendly_connect(log, data, duser, tname, tid, giverole, welcome)
 			})
 		end
 		if welcome then
-			send_welcome(log, duser, tname)
+			send_welcome(log, duser, tname, false)
 		end
 	end
 	return ok, errcode, errbody
@@ -1753,7 +1756,7 @@ local function serve_check_endpoint()
 						},
 					})
 					if status == "ok" then
-						send_welcome(log, info.user.id, tname)
+						send_welcome(log, info.user.id, tname, info.tnameupdate)
 					end
 				end
 				if not ok then
