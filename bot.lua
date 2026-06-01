@@ -480,12 +480,12 @@ local rquser_events = history.history(config.bot.rquser_max_log)
 local function appcommand_getrquser(log, data)
 	local dmsg = data.data.target_id
 	local log = log:sub("appcommand_getrquser by duser $ for dmsg $", data.member.user.id, dmsg)
-	local duser = rquser_events:get(dmsg)
+	local info = rquser_events:get(dmsg)
 	local ok, errcode, errbody
-	if duser then
-		log("found dmsg $: requested by duser $", dmsg, duser)
+	if info then
+		log("found dmsg $: requested by duser $", dmsg, info.author)
 		ok, errcode, errbody = discord_interaction_respond(data, {
-			content = subst("Requested by <@$>.", duser),
+			content = subst("Requested by <@$>.", info.author),
 		})
 	else
 		log("dmsg $ not found", dmsg)
@@ -503,6 +503,29 @@ add_command({
 	handler_ = appcommand_getrquser,
 	can_use_ = secret_config.mod_role_ids,
 })
+
+local function reaction_deleteembed(log, data)
+	local dmsg = data.message_id
+	local log = log:sub("reaction_deleteembed by duser $ for dmsg $", data.member.user.id, dmsg)
+	local info = rquser_events:get(dmsg)
+	if info then
+		if info.deleted then
+			log("found dmsg $ but it has already been deleted", dmsg)
+		elseif info.author == data.member.user.id then
+			log("found dmsg $: requested by duser $, deleting", dmsg, info.author)
+			local ok, errcode, errbody = cli:delete_channel_message(info.channel_id, dmsg)
+			if ok then
+				info.deleted = true
+			else
+				log("failed to remove message: code $: $", errcode, errbody)
+			end
+		else
+			log("found dmsg $: requested by duser $, not the same as $", dmsg, info.author, data.member.user.id)
+		end
+	else
+		log("dmsg $ not found", dmsg)
+	end
+end
 
 local function appcommand_whois(log, data)
 	local duser
@@ -1340,7 +1363,10 @@ local function do_save_embed(log, id, data, report_failure)
 		}))
 	end
 	if ok then
-		rquser_events:push(ok.id, data.author.id)
+		rquser_events:push(ok.id, {
+			author     = data.author.id,
+			channel_id = data.channel_id,
+		})
 	else
 		log("failed to notify user: code $: $", errcode, errbody)
 	end
@@ -1416,7 +1442,10 @@ local function do_user_embed(log, tname, data, report_failure)
 		}))
 	end
 	if ok then
-		rquser_events:push(ok.id, data.author.id)
+		rquser_events:push(ok.id, {
+			author     = data.author.id,
+			channel_id = data.channel_id,
+		})
 	else
 		log("failed to notify user: code $: $", errcode, errbody)
 	end
@@ -1632,6 +1661,14 @@ local function on_dispatch(_, dtype, data)
 					end
 				else
 					log("no handler for app command $", key)
+				end
+			end
+			if  dtype == "MESSAGE_REACTION_ADD"
+			and data.guild_id == secret_config.guild_id
+			and array_intersect(data.member.roles, secret_config.user_role_ids)
+			and not array_intersect(data.member.roles, secret_config.embed_muted_role_ids) then
+				if data.emoji.name == "❌" then
+					reaction_deleteembed(log, data)
 				end
 			end
 		end)
@@ -1931,10 +1968,11 @@ queue:wrap(function()
 		app_id               = secret_config.app_id,
 		oauth_client_id      = secret_config.oauth_id,
 		oauth_client_secret  = secret_config.oauth_secret,
-		intents              = discord.intent.GUILDS          |
-		                       discord.intent.GUILD_MEMBERS   |
-		                       discord.intent.GUILD_PRESENCES |
-		                       discord.intent.GUILD_MESSAGES  |
+		intents              = discord.intent.GUILDS                  |
+		                       discord.intent.GUILD_MEMBERS           |
+		                       discord.intent.GUILD_PRESENCES         |
+		                       discord.intent.GUILD_MESSAGES          |
+		                       discord.intent.GUILD_MESSAGE_REACTIONS |
 		                       discord.intent.MESSAGE_CONTENT,
 		identify_browser     = config.bot.http_server,
 		identify_device      = config.bot.http_server,

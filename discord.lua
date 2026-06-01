@@ -632,6 +632,10 @@ function client_i:create_channel_message(channel, data)
 	return self:patient_api_fetch_("POST /channels/#/messages", channel, data)
 end
 
+function client_i:delete_channel_message(channel, message)
+	return self:patient_api_fetch_("DELETE /channels/#/messages/$", channel, message)
+end
+
 function client_i:create_interaction_response(interaction, token, data)
 	return self:patient_api_fetch_("POST /interactions/$/$/callback", interaction, token, data)
 end
